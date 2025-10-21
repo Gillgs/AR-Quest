@@ -1,8 +1,9 @@
 {
-  "name": "augmentedapp",
+  "name": "arquest",
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "productName": "ARquest",
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -8,6 +8,7 @@ import { lessonUtils } from '../utils/lessonUtils';
 import { quizUtils } from '../utils/quizUtils';
 import { moduleUtils } from '../utils/moduleUtils';
 import CreateModuleModal from '../components/CreateModuleModal';
+import ProgressDetails from '../components/ProgressDetails';
 import languageImg from '../Subject_image/Language.png';
 import gmrcImg from '../Subject_image/GMRC.png';
 import mathImg from '../Subject_image/Mathemathics.png';
@@ -5951,60 +5952,60 @@ const SubjectModulePage = () => {
                                   width: '100%'
                               }}>
                               {String(userRole).toLowerCase() === 'parent' ? (
-                                (() => {
-                                  const student = studentsToShow && studentsToShow.length ? studentsToShow[0] : null;
-                                  const modProg = student ? (student.progress.modules.find(pm => String(pm.id) === String(m.id) || pm.title === m.name) || { completion: 0, lessons_completed: 0, total_lessons: 0, quizzes: null }) : { completion: 0, lessons_completed: 0, total_lessons: 0, quizzes: null };
-                                  return (
-                                    <div style={{ display: 'flex', gap: spacing.sm, alignItems: 'flex-start', flexWrap: 'nowrap', overflowX: 'hidden', paddingBottom: spacing.xs, width: '100%' }}>
-                                      {/* Lessons box (flex: grow) */}
-                                      <div style={{ padding: spacing.sm, background: '#fff', borderRadius: borderRadius.md, border: `1px solid ${colors.borderColor}`, boxShadow: shadows.sm, flex: '1 1 50%', minWidth: 180, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 90 }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs }}>
-                                          <div style={{ fontWeight: 700, color: colors.textColor, fontSize: '0.95rem' }}>Lessons</div>
-                                          <div style={{ color: m.color || colors.primary, fontWeight: 700 }}>{modProg.completion}%</div>
-                                        </div>
-                                        <div style={{ height: 10, background: `${(m.color || colors.primary)}10`, borderRadius: 8, overflow: 'hidden' }}>
-                                          <div style={{ width: `${modProg.completion}%`, height: '100%', background: m.color || colors.primary, transition: 'width 0.3s' }} />
-                                        </div>
-                                        <div style={{ marginTop: spacing.xs, color: colors.mutedText, fontSize: '0.9rem' }}>{modProg.lessons_completed}/{(m.lessons ? m.lessons.length : 0)} lessons</div>
-                                      </div>
-
-                                      {/* Quiz box (fixed width, will wrap on small screens) */}
-                                      <div style={{ padding: spacing.sm, background: '#fff', borderRadius: borderRadius.md, border: `1px solid ${colors.borderColor}`, boxShadow: shadows.sm, flex: '1 1 50%', minWidth: 180, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 90 }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs }}>
-                                          <div style={{ fontWeight: 700, color: colors.textColor, fontSize: '0.95rem' }}>Quizzes</div>
-                                          <div style={{ color: colors.mutedText, fontSize: '0.85rem' }}>
-                                            {modProg.quizzes ? modProg.quizzes.quiz_count || (m.quizzes && m.quizzes.length) || 0 : 0}
-                                          </div>
-                                        </div>
-                                        {modProg.quizzes && modProg.quizzes.best_score !== null ? (
-                                          <>
-                                            <div style={{ width: '100%', marginBottom: spacing.xs }}>
-                                              <div className="progress" style={{ height: 10, borderRadius: 8, background: 'rgba(0,0,0,0.03)', overflow: 'hidden' }}>
-                                                <div className="progress-bar" role="progressbar" style={{ width: `${modProg.quizzes.best_score}%`, background: m.color || colors.primary, height: '10px' }} aria-valuenow={modProg.quizzes.best_score} aria-valuemin="0" aria-valuemax="100"></div>
-                                              </div>
-                                            </div>
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', color: colors.mutedText, fontSize: '0.85rem' }}>
-                                              <div>{modProg.quizzes.best_score}% best</div>
-                                              <div>{modProg.quizzes.attempts} attempt{modProg.quizzes.attempts !== 1 ? 's' : ''}</div>
-                                            </div>
-                                          </>
-                                        ) : (
-                                          <div style={{ color: colors.mutedText, fontSize: '0.85rem' }}>No attempts yet</div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })()
-                              ) : (
+                                <ProgressDetails
+                                  moduleId={m.id}
+                                  studentId={selectedChildId}
+                                  userRole={userRole}
+                                  showForAllStudents={false}
+                                  colors={colors}
+                                  spacing={spacing}
+                                  borderRadius={borderRadius}
+                                  shadows={shadows}
+                                />
+                              ) : String(userRole).toLowerCase() === 'teacher' ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm, width: '100%' }}>
                                   {studentsToShow.map(student => {
                                     const modProg = student.progress.modules.find(pm => String(pm.id) === String(m.id) || pm.title === m.name) || { completion: 0, lessons_completed: 0, total_lessons: 0, quizzes: null };
                                     const isSelected = selectedStudent && String(selectedStudent.id) === String(student.id);
+                                    const handleStudentClick = () => {
+                                      const shouldSelect = !isSelected;
+                                      setSelectedStudent(shouldSelect ? student : null);
+
+                                      if (shouldSelect) {
+                                        // Give time for the content to render before scrolling
+                                        setTimeout(() => {
+                                          const elementId = `progress-${m.id}-${student.id}`;
+                                          const element = document.getElementById(elementId);
+                                          if (!element) return;
+
+                                          // Find nearest scrollable ancestor (module's student list)
+                                          let scrollAncestor = element.parentElement;
+                                          while (scrollAncestor) {
+                                            const style = window.getComputedStyle(scrollAncestor);
+                                            const overflowY = style.getPropertyValue('overflow-y');
+                                            if (overflowY === 'auto' || overflowY === 'scroll') break;
+                                            scrollAncestor = scrollAncestor.parentElement;
+                                          }
+
+                                          if (scrollAncestor) {
+                                            // Calculate offset of element relative to ancestor and scroll
+                                            const ancestorRect = scrollAncestor.getBoundingClientRect();
+                                            const elementRect = element.getBoundingClientRect();
+                                            const offset = elementRect.top - ancestorRect.top + scrollAncestor.scrollTop - 8; // small padding
+                                            scrollAncestor.scrollTo({ top: offset, behavior: 'smooth' });
+                                          } else {
+                                            // Fallback to native scrollIntoView
+                                            element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                                          }
+                                        }, 120);
+                                      }
+                                    };
+
                                     return (
-                                      <div key={student.id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                      <div key={student.id} style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
                                         <button
                                           type="button"
-                                          onClick={() => setSelectedStudent(isSelected ? null : student)}
+                                          onClick={handleStudentClick}
                                           style={{
                                             display: 'flex',
                                             justifyContent: 'space-between',
@@ -6013,10 +6014,11 @@ const SubjectModulePage = () => {
                                             padding: spacing.sm,
                                             background: isSelected ? '#f6f9ff' : '#fff',
                                             border: `1px solid ${colors.borderColor}`,
-                                            borderRadius: borderRadius.md,
+                                            borderRadius: isSelected ? `${borderRadius.md} ${borderRadius.md} 0 0` : borderRadius.md,
                                             boxShadow: shadows.sm,
                                             cursor: 'pointer',
-                                            textAlign: 'left'
+                                            textAlign: 'left',
+                                            marginBottom: isSelected ? 0 : undefined
                                           }}
                                         >
                                           <div style={{ fontWeight: 700, color: colors.textColor }}>{student.name}</div>
@@ -6027,57 +6029,51 @@ const SubjectModulePage = () => {
                                         </button>
 
                                         {isSelected && (
-                                          <div style={{ padding: spacing.sm, background: '#fff', borderRadius: borderRadius.md, border: `1px solid ${colors.borderColor}`, boxShadow: shadows.sm }}>
-                                            {/* Lessons summary */}
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.xs }}>
-                                              <div style={{ fontWeight: 700, color: colors.textColor, fontSize: '0.95rem' }}>Lessons</div>
-                                              <div style={{ color: m.color || colors.primary, fontWeight: 700 }}>{modProg.completion}%</div>
-                                            </div>
-                                            <div style={{ height: 10, background: `${(m.color || colors.primary)}10`, borderRadius: 8, overflow: 'hidden', marginBottom: spacing.xs }}>
-                                              <div style={{ width: `${modProg.completion}%`, height: '100%', background: m.color || colors.primary, transition: 'width 0.3s' }} />
-                                            </div>
-                                            <div style={{ marginBottom: spacing.sm, color: colors.mutedText, fontSize: '0.9rem' }}>{modProg.lessons_completed}/{(m.lessons ? m.lessons.length : 0)} lessons</div>
-
-                                            {/* Quiz summary */}
-                                            <div style={{ fontWeight: 700, color: colors.textColor, marginBottom: spacing.xs }}>Quizzes</div>
-                                            {modProg.quizzes && modProg.quizzes.best_score !== null ? (
-                                              <>
-                                                <div style={{ width: '100%', marginBottom: spacing.xs }}>
-                                                  <div className="progress" style={{ height: 10, borderRadius: 8, background: 'rgba(0,0,0,0.03)', overflow: 'hidden' }}>
-                                                    <div className="progress-bar" role="progressbar" style={{ width: `${modProg.quizzes.best_score}%`, background: m.color || colors.primary, height: '10px' }} aria-valuenow={modProg.quizzes.best_score} aria-valuemin="0" aria-valuemax="100"></div>
-                                                  </div>
-                                                </div>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', color: colors.mutedText, fontSize: '0.85rem', marginBottom: spacing.xs }}>
-                                                  <div><strong>{modProg.quizzes.best_score}%</strong> best score</div>
-                                                  <div><strong>{modProg.quizzes.attempts}</strong> total attempts</div>
-                                                </div>
-                                                <div style={{ color: colors.mutedText, fontSize: '0.8rem' }}>
-                                                  {modProg.quizzes.quiz_count || (m.quizzes && m.quizzes.length) || 0} quiz{((modProg.quizzes.quiz_count || (m.quizzes && m.quizzes.length) || 0) !== 1) ? 'es' : ''} available
-                                                </div>
-                                                {/* Show individual quiz details if available */}
-                                                {modProg.quizzes.details && modProg.quizzes.details.length > 0 && (
-                                                  <div style={{ marginTop: spacing.sm, padding: spacing.xs, background: '#f8f9fa', borderRadius: '6px' }}>
-                                                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: colors.textColor, marginBottom: '4px' }}>Quiz Details:</div>
-                                                    {modProg.quizzes.details.map((quiz, idx) => (
-                                                      <div key={quiz.quiz_id} style={{ fontSize: '0.75rem', color: colors.mutedText, marginBottom: '2px' }}>
-                                                        {quiz.quiz_title}: {quiz.best_score}% ({quiz.attempts} attempts)
-                                                      </div>
-                                                    ))}
-                                                  </div>
-                                                )}
-                                              </>
-                                            ) : (
-                                              <div style={{ color: colors.mutedText, fontSize: '0.85rem' }}>
-                                                No attempts yet
-                                                {(m.quizzes && m.quizzes.length > 0) && (
-                                                  <div style={{ fontSize: '0.8rem', marginTop: '4px' }}>
-                                                    {m.quizzes.length} quiz{m.quizzes.length !== 1 ? 'es' : ''} available
-                                                  </div>
-                                                )}
-                                              </div>
-                                            )}
+                                          <div 
+                                            id={`progress-${m.id}-${student.id}`}
+                                            style={{
+                                              background: '#fff',
+                                              border: `1px solid ${colors.borderColor}`,
+                                            borderTop: 'none',
+                                            borderRadius: `0 0 ${borderRadius.md} ${borderRadius.md}`,
+                                            marginTop: -1
+                                          }}>
+                                            <ProgressDetails
+                                              moduleId={m.id}
+                                              studentId={student.id}
+                                              userRole="parent"
+                                              showForAllStudents={false}
+                                              colors={colors}
+                                              spacing={spacing}
+                                              borderRadius={borderRadius}
+                                              shadows={shadows}
+                                            />
                                           </div>
                                         )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm, width: '100%' }}>
+                                  {studentsToShow.map(student => {
+                                    const modProg = student.progress.modules.find(pm => String(pm.id) === String(m.id) || pm.title === m.name) || { completion: 0, lessons_completed: 0, total_lessons: 0, quizzes: null };
+                                    return (
+                                      <div key={student.id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                        <div style={{
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center',
+                                          width: '100%',
+                                          padding: spacing.sm,
+                                          background: '#fff',
+                                          border: `1px solid ${colors.borderColor}`,
+                                          borderRadius: borderRadius.md,
+                                          boxShadow: shadows.sm
+                                        }}>
+                                          <div style={{ fontWeight: 700, color: colors.textColor }}>{student.name}</div>
+                                          <div style={{ color: m.color || colors.primary, fontWeight: 700 }}>{modProg.completion}%</div>
+                                        </div>
                                       </div>
                                     );
                                   })}
