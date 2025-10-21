@@ -1,0 +1,59 @@
+/* src/App.css */
+.sidebar-item {
+  transition: all 0.2s ease;
+}
+
+.sidebar-item:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Dialog/modal styles for ParentLoginPage */
+.dialog-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+
+.dialog-box {
+  background: #fff;
+  padding: 2rem 1.5rem;
+  border-radius: 10px;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.2);
+  min-width: 300px;
+  max-width: 90vw;
+  text-align: center;
+}
+
+/* Compact button styles: slightly smaller buttons across the app */
+button,
+.btn,
+input[type="button"],
+input[type="submit"],
+.btn-primary,
+.btn-secondary {
+  font-size: 0.9rem; /* slightly smaller text */
+  padding: 6px 10px; /* reduced vertical and horizontal padding */
+  border-radius: 6px;
+  line-height: 1.2;
+}
+
+/* Extra-small variants keep a slightly tighter look */
+.btn-sm,
+button.btn-sm {
+  font-size: 0.82rem;
+  padding: 4px 8px;
+}
+
+/* Keep clickable affordance */
+button:focus,
+.btn:focus {
+  outline: 2px solid rgba(0,123,255,0.25);
+  outline-offset: 2px;
+}

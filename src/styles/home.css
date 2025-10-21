@@ -1,0 +1,23 @@
+/* Home page styles (minimal additions) */
+
+/* Generic section title */
+.section-title {
+	font-size: 2rem;
+	margin-bottom: 1rem;
+	color: #fff; /* default white for most sections on dark backgrounds */
+}
+
+/* Ensure the Features section title is black */
+.features .section-title {
+	color: #000 !important;
+}
+
+/* Center helper (used in home.jsx) */
+.section-title.center {
+	text-align: center;
+}
+
+/* small utility to ensure text in feature cards is readable */
+.cards-container .card-title {
+	color: #000;
+}
