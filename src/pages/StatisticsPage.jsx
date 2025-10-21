@@ -172,6 +172,15 @@ const StatisticsPage = () => {
     }]
   });
   const [loadingSectionPie, setLoadingSectionPie] = useState(true);
+  // For subject performance data
+  const [subjectPerformanceData, setSubjectPerformanceData] = useState({
+    labels: [],
+    datasets: []
+  });
+  const [loadingSubjects, setLoadingSubjects] = useState(true);
+  const [overallAverageScore, setOverallAverageScore] = useState(0);
+  const [scoreImprovement, setScoreImprovement] = useState(0);
+  const [totalQuizAttempts, setTotalQuizAttempts] = useState(0);
 
   // Handle window resize for mobile responsiveness
   useEffect(() => {
@@ -391,26 +400,139 @@ const StatisticsPage = () => {
     ],
   };  // Section distribution data is now handled by the state variable sectionDistributionData
 
-  // Subject performance data
-  const subjectsData = {
-    labels: ['Language', 'Math', 'GMRC', 'Makabansa', 'Physical & Natural Environmental'],
-    datasets: [
-      {
-        label: 'Average Score',
-        data: [75, 72, 85, 78, 80],
-        backgroundColor: chartColors.secondaryLight,
-        borderColor: chartColors.secondary,
-        borderWidth: 2,
-      },
-      {
-        label: 'Highest Score',
-        data: [92, 89, 98, 94, 95],
-        backgroundColor: chartColors.primaryLight,
-        borderColor: chartColors.primary,
-        borderWidth: 2,
+  // Fetch subject performance data
+  useEffect(() => {
+    const fetchSubjectPerformanceData = async () => {
+      setLoadingSubjects(true);
+      try {
+        const client = supabaseAdmin || supabase;
+        
+        // Use direct SQL query to get subject performance
+        const { data: subjectStats, error: subjectError } = await client
+          .from('subjects')
+          .select('*')
+          .eq('is_active', true)
+          .order('sort_order');
+
+        if (subjectError) throw subjectError;
+
+        // Get quiz performance for each subject
+        const performancePromises = subjectStats.map(async (subject) => {
+          const { data: quizData, error: quizError } = await client
+            .from('quiz_attempts')
+            .select(`
+              score,
+              student_id,
+              quizzes!inner(
+                id,
+                modules!inner(
+                  subject_id
+                )
+              )
+            `)
+            .eq('quizzes.modules.subject_id', subject.id);
+
+          if (quizError) {
+            console.warn(`Error fetching quiz data for ${subject.name}:`, quizError);
+            return {
+              name: subject.name,
+              average_score: 0,
+              highest_score: 0,
+              total_attempts: 0,
+              students_attempted: 0
+            };
+          }
+
+          const scores = quizData?.map(attempt => attempt.score) || [];
+          const uniqueStudents = [...new Set(quizData?.map(attempt => attempt.student_id) || [])];
+
+          return {
+            name: subject.name,
+            average_score: scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0,
+            highest_score: scores.length > 0 ? Math.max(...scores) : 0,
+            total_attempts: scores.length,
+            students_attempted: uniqueStudents.length
+          };
+        });
+
+        const processedData = await Promise.all(performancePromises);
+
+        // Update the chart data
+        const labels = processedData.map(subject => {
+          // Shorten long names for better display
+          if (subject.name === 'Good Manners and Right Conduct') return 'GMRC';
+          if (subject.name === 'Environmental Science') return 'Environment';
+          if (subject.name === 'Language Arts') return 'Language';
+          return subject.name;
+        });
+
+        const avgScores = processedData.map(subject => Math.round(subject.average_score));
+        const highestScores = processedData.map(subject => subject.highest_score);
+
+        setSubjectPerformanceData({
+          labels,
+          datasets: [
+            {
+              label: 'Average Score',
+              data: avgScores,
+              backgroundColor: chartColors.secondaryLight,
+              borderColor: chartColors.secondary,
+              borderWidth: 2,
+            },
+            {
+              label: 'Highest Score',
+              data: highestScores,
+              backgroundColor: chartColors.primaryLight,
+              borderColor: chartColors.primary,
+              borderWidth: 2,
+            }
+          ],
+        });
+
+        // Calculate overall average score across all subjects (weighted by attempts)
+        const totalScore = processedData.reduce((sum, subject) => sum + (subject.average_score * subject.total_attempts), 0);
+        const totalAttempts = processedData.reduce((sum, subject) => sum + subject.total_attempts, 0);
+        const overallAvg = totalAttempts > 0 ? totalScore / totalAttempts : 0;
+        setOverallAverageScore(Math.round(overallAvg * 100) / 100); // Keep 2 decimal places
+
+        // Store total attempts for footer display
+        setTotalQuizAttempts(totalAttempts);
+
+        // Calculate improvement (simplified - using difference from expected average of 75%)
+        const expectedAverage = 75;
+        const improvement = Math.max(0, overallAvg - expectedAverage);
+        setScoreImprovement(Math.round(improvement));
+
+      } catch (error) {
+        console.error('Error fetching subject performance:', error);
+        setError("Failed to fetch subject performance data");
+        
+        // Keep fallback static data if database fetch fails
+        setSubjectPerformanceData({
+          labels: ['Language', 'Math', 'GMRC', 'Makabayan', 'Environment'],
+          datasets: [
+            {
+              label: 'Average Score',
+              data: [75, 72, 85, 78, 80],
+              backgroundColor: chartColors.secondaryLight,
+              borderColor: chartColors.secondary,
+              borderWidth: 2,
+            },
+            {
+              label: 'Highest Score',
+              data: [92, 89, 98, 94, 95],
+              backgroundColor: chartColors.primaryLight,
+              borderColor: chartColors.primary,
+              borderWidth: 2,
+            }
+          ],
+        });
       }
-    ],
-  };
+      setLoadingSubjects(false);
+    };
+
+    fetchSubjectPerformanceData();
+  }, []);
 
   // Chart options
   const chartOptions = {
@@ -559,8 +681,14 @@ const StatisticsPage = () => {
                                     minHeight: '150px'
                                   }}>
                                     <h6 className="text-muted mb-2" style={{ fontSize: isMobile ? '0.9rem' : '1rem', fontWeight: '500' }}>Average Score</h6>
-                                    <h2 className="mb-2" style={{ color: '#333', fontWeight: '700', fontSize: isMobile ? '2rem' : '2.5rem' }}>82%</h2>
-                                    <small className="text-success d-block" style={{ fontWeight: '600', fontSize: isMobile ? '0.8rem' : '0.9rem' }}>↑ 7% from last month</small>
+                                    <h2 className="mb-2" style={{ color: '#333', fontWeight: '700', fontSize: isMobile ? '2rem' : '2.5rem' }}>
+                                      {loadingSubjects ? '...' : `${overallAverageScore || 0}%`}
+                                    </h2>
+                                    <small className={`d-block ${scoreImprovement > 0 ? 'text-success' : 'text-muted'}`} style={{ fontWeight: '600', fontSize: isMobile ? '0.8rem' : '0.9rem' }}>
+                                      {loadingSubjects ? 'Loading...' : 
+                                        scoreImprovement > 0 ? `↑ ${scoreImprovement}% above expected` : 'Based on quiz performance'
+                                      }
+                                    </small>
                                   </div>
                                 </Col>
                                 <Col xs={12} md={6} className="d-flex">
@@ -755,9 +883,21 @@ const StatisticsPage = () => {
                                 borderRadius: '18px',
                                 boxShadow: '0 2px 12px rgba(38,222,129,0.05)',
                                 padding: isMobile ? '1rem' : '2rem',
-                                height: '400px'
+                                height: '400px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
                               }}>
-                                <Bar data={subjectsData} options={{
+                                {loadingSubjects ? (
+                                  <div style={{textAlign: 'center', padding: '2rem'}}>
+                                    <span>Loading subject performance...</span>
+                                  </div>
+                                ) : subjectPerformanceData.labels.length === 0 ? (
+                                  <div style={{textAlign: 'center', padding: '2rem'}}>
+                                    <span>No subject performance data available.</span>
+                                  </div>
+                                ) : (
+                                  <Bar data={subjectPerformanceData} options={{
                                   ...baseChartOptions, 
                                   plugins: {
                                     ...baseChartOptions.plugins,
@@ -796,7 +936,8 @@ const StatisticsPage = () => {
                                       }
                                     }
                                   }
-                                }} />
+                                  }} />
+                                )}
                               </div>
                             </Card.Body>
                             <Card.Footer className="bg-transparent" style={{
@@ -807,7 +948,10 @@ const StatisticsPage = () => {
                               borderRadius: '0 0 24px 24px'
                             }}>
                               <small className="text-muted">
-                                Performance breakdown across different subjects showing both average and highest scores.
+                                {loadingSubjects ? 
+                                  'Loading subject performance data...' : 
+                                  `Real-time performance data from ${totalQuizAttempts} quiz attempts across all subjects.`
+                                }
                               </small>
                             </Card.Footer>
                           </Card>
