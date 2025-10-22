@@ -865,45 +865,58 @@ const SubjectModulePage = () => {
     // Fetch real quiz attempts for this student
     const quizAttemptsMap = await fetchQuizAttempts(student.id);
     
-    // Debug: Check quiz ID matching (reduced logging)
-    const allModuleQuizIds = availableModules.flatMap(m => (m.quizzes || []).map(q => q.id));
-    const attemptQuizIds = Object.keys(quizAttemptsMap);
-    if (attemptQuizIds.length > 0 && allModuleQuizIds.length > 0) {
-    }
     const moduleProgress = await Promise.all(availableModules.map(async (module) => {
       const totalLessons = module.lessons ? module.lessons.length : 0;
+      const totalQuizzes = module.quizzes ? module.quizzes.length : 0;
       
-      // Fetch real lesson progress for this student and module
-      let completedLessons = 0;
-      let completion = 0;
+      // Calculate total items in the module (lessons + quizzes)
+      const totalItems = totalLessons + totalQuizzes;
       
+      // Fetch completed lessons from lesson_completions table
+      let completedLessonsCount = 0;
+      let completedLessonIds = [];
       try {
-        // Try to fetch from student_progress table (suggested by Supabase error)
-        const { data: lessonProgress, error } = await supabase
-          .from('student_progress')
-          .select('*')
-          .eq('student_id', student.id)
-          .eq('module_id', module.id);
+        if (totalLessons > 0) {
+          const lessonIds = module.lessons.map(l => l.id);
+          const { data: completions, error } = await supabase
+            .from('lesson_completions')
+            .select('lesson_id, completed_at')
+            .eq('student_id', student.id)
+            .in('lesson_id', lessonIds);
           
-        if (error && error.code !== 'PGRST116') {
-        } else if (lessonProgress) {
-          completedLessons = lessonProgress.length;
-          completion = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+          if (!error && completions) {
+            completedLessonsCount = completions.length;
+            completedLessonIds = completions.map(c => c.lesson_id);
+          }
         }
       } catch (error) {
-        // If student progress tracking doesn't exist, show 0 completion
-        completedLessons = 0;
-        completion = 0;
+        console.error('Error fetching lesson completions:', error);
+        completedLessonsCount = 0;
+        completedLessonIds = [];
       }
       
-      // Find quiz attempts for this module
+      // Count completed quizzes (any quiz with a completed attempt)
+      let completedQuizzesCount = 0;
       const moduleQuizzes = module.quizzes || [];
-      let moduleQuizData = null;
-      
-      // Processing module (reduced logging)
       
       if (moduleQuizzes.length > 0) {
-        // Find the best score across all quizzes in this module
+        moduleQuizzes.forEach(quiz => {
+          const quizAttempts = quizAttemptsMap[quiz.id];
+          // If quiz has at least one completed attempt, count it as completed
+          if (quizAttempts && quizAttempts.total_attempts > 0) {
+            completedQuizzesCount += 1;
+          }
+        });
+      }
+      
+      // Calculate progress: completed items / total items
+      // Example: if 2 lessons completed + 1 quiz completed out of 3 lessons + 2 quizzes = 3/5 = 60%
+      const completedItems = completedLessonsCount + completedQuizzesCount;
+      const completion = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
+      
+      // Prepare quiz data for display
+      let moduleQuizData = null;
+      if (moduleQuizzes.length > 0) {
         let bestScore = 0;
         let totalAttempts = 0;
         let hasAttempts = false;
@@ -923,6 +936,7 @@ const SubjectModulePage = () => {
             best_score: bestScore,
             attempts: totalAttempts,
             quiz_count: moduleQuizzes.length,
+            completed_count: completedQuizzesCount,
             details: moduleQuizzes.map(quiz => {
               const attempts = quizAttemptsMap[quiz.id];
               return {
@@ -941,8 +955,13 @@ const SubjectModulePage = () => {
         id: module.id,
         title: module.name,
         completion,
-        lessons_completed: completedLessons,
+        lessons_completed: completedLessonsCount,
         total_lessons: totalLessons,
+        completed_lesson_ids: completedLessonIds,
+        quizzes_completed: completedQuizzesCount,
+        total_quizzes: totalQuizzes,
+        total_items: totalItems,
+        completed_items: completedItems,
         quizzes: moduleQuizData
       };
     }));
@@ -954,7 +973,6 @@ const SubjectModulePage = () => {
       }
     };
     
-    // Generated progress for student (reduced logging)
     return finalStudentData;
   };
   
@@ -4758,6 +4776,23 @@ const SubjectModulePage = () => {
   const ModuleCard = ({ module, index }) => {
     const isHovered = hoveredModule === index;
     
+    // Calculate the progress for the current student (parent/student view)
+    // For teacher/admin, use the class average (module.progress)
+    let displayProgress = module.progress || 0;
+    
+    if ((userRole === 'parent' || userRole === 'student') && studentsToShow.length > 0) {
+      // For parent/student view, get the individual student's progress
+      const currentStudent = studentsToShow[0]; // Parent/student will only have one student in the array
+      if (currentStudent?.progress?.modules) {
+        const studentModuleProgress = currentStudent.progress.modules.find(
+          m => String(m.id) === String(module.id) || m.title === module.name
+        );
+        if (studentModuleProgress) {
+          displayProgress = studentModuleProgress.completion || 0;
+        }
+      }
+    }
+    
     return (
       <div 
         style={{ 
@@ -4803,7 +4838,8 @@ const SubjectModulePage = () => {
                 fontWeight: 700, 
                 fontSize: '1.25rem', 
                 margin: 0, 
-                color: colors.textColor 
+                color: colors.textColor,
+                flex: 1
               }}>
                 {module.name}
               </h3>
@@ -4820,6 +4856,20 @@ const SubjectModulePage = () => {
                   {getDifficultyCategory(module.difficultyLevel)}
                 </div>
               )}
+              {/* Display progress percentage */}
+              <div style={{
+                marginLeft: spacing.sm,
+                padding: `${spacing.xs}px ${spacing.md}px`,
+                background: `${module.color}15`,
+                color: module.color,
+                borderRadius: borderRadius.default,
+                fontSize: '1rem',
+                fontWeight: 700,
+                minWidth: '60px',
+                textAlign: 'center'
+              }}>
+                {displayProgress}%
+              </div>
             </div>
             
             {module.description && (
@@ -5011,7 +5061,25 @@ const SubjectModulePage = () => {
                     </button>
                   )}
                 </div>
-                {module.lessons.map((lesson, lIdx) => (
+                {module.lessons.map((lesson, lIdx) => {
+                  // Check if the student has completed this lesson
+                  let isLessonCompleted = false;
+                  if ((userRole === 'parent' || userRole === 'student') && studentsToShow.length > 0) {
+                    const currentStudent = studentsToShow[0];
+                    if (currentStudent?.progress?.modules) {
+                      const studentModuleProgress = currentStudent.progress.modules.find(
+                        m => String(m.id) === String(module.id) || m.title === module.name
+                      );
+                      // Check if this lesson ID is in the completed lessons array
+                      if (studentModuleProgress?.completed_lesson_ids) {
+                        isLessonCompleted = studentModuleProgress.completed_lesson_ids.some(
+                          completedId => String(completedId) === String(lesson.id)
+                        );
+                      }
+                    }
+                  }
+                  
+                  return (
                   <div key={lesson.id} style={{
                     display: 'flex',
                     flexDirection: 'row',
@@ -5038,9 +5106,28 @@ const SubjectModulePage = () => {
                   >
                     <BookOpen size={18} color={module.color} style={{ marginRight: spacing.md }} />
                     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-                      <h5 style={{ fontWeight: 600, fontSize: '1.05rem', margin: 0, color: colors.textColor }}>
-                        {lesson.title}
-                      </h5>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: spacing.sm }}>
+                        <h5 style={{ fontWeight: 600, fontSize: '1.05rem', margin: 0, color: colors.textColor }}>
+                          {lesson.title}
+                        </h5>
+                        {/* Completion status indicator for students/parents */}
+                        {(userRole === 'parent' || userRole === 'student') && isLessonCompleted && (
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: spacing.xs,
+                            padding: `${spacing.xs}px ${spacing.sm}px`,
+                            background: `${colors.success}20`,
+                            color: colors.success,
+                            borderRadius: borderRadius.sm,
+                            fontSize: '0.75rem',
+                            fontWeight: 700
+                          }}>
+                            <Check size={12} />
+                            <span>Completed</span>
+                          </div>
+                        )}
+                      </div>
                       <p style={{ color: colors.mutedText, margin: 0, marginTop: 4, fontSize: '0.9rem' }}>
                         {lesson.description}
                       </p>
@@ -5113,7 +5200,8 @@ const SubjectModulePage = () => {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
             {/* Render quizzes below lessons */}
@@ -5148,7 +5236,24 @@ const SubjectModulePage = () => {
                     </button>
                   )}
                 </div>
-                {module.quizzes.map((quiz, qIdx) => (
+                {module.quizzes.map((quiz, qIdx) => {
+                  // Get student's quiz attempt data if viewing as parent/student
+                  let studentQuizData = null;
+                  if ((userRole === 'parent' || userRole === 'student') && studentsToShow.length > 0) {
+                    const currentStudent = studentsToShow[0];
+                    if (currentStudent?.progress?.modules) {
+                      const studentModuleProgress = currentStudent.progress.modules.find(
+                        m => String(m.id) === String(module.id) || m.title === module.name
+                      );
+                      if (studentModuleProgress?.quizzes?.details) {
+                        studentQuizData = studentModuleProgress.quizzes.details.find(
+                          q => String(q.quiz_id) === String(quiz.id)
+                        );
+                      }
+                    }
+                  }
+                  
+                  return (
                   <div key={quiz.id} style={{
                     display: 'flex',
                     flexDirection: 'row',
@@ -5181,7 +5286,7 @@ const SubjectModulePage = () => {
                       <p style={{ color: colors.mutedText, margin: 0, marginTop: 4, fontSize: '0.9rem' }}>
                         {quiz.description}
                       </p>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, marginTop: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, marginTop: 8, flexWrap: 'wrap' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
                           <FileText size={14} color={colors.mutedText} />
                           <span style={{ fontSize: '0.85rem', color: colors.mutedText }}>
@@ -5202,16 +5307,54 @@ const SubjectModulePage = () => {
                             {quiz.passing_score}% to pass
                           </span>
                         </div>
-                        <div style={{
-                          fontSize: '0.8rem',
-                          padding: `${spacing.xs}px ${spacing.sm}px`,
-                          background: quiz.is_active ? `${colors.success}20` : `${colors.mutedText}20`,
-                          color: quiz.is_active ? colors.success : colors.mutedText,
-                          borderRadius: borderRadius.sm,
-                          fontWeight: 600
-                        }}>
-                          {quiz.is_active ? 'Active' : 'Inactive'}
-                        </div>
+                        {/* Show student's attempts and score if available */}
+                        {studentQuizData && studentQuizData.attempts > 0 && (
+                          <>
+                            <div style={{
+                              fontSize: '0.85rem',
+                              padding: `${spacing.xs}px ${spacing.sm}px`,
+                              background: `${module.color}15`,
+                              color: module.color,
+                              borderRadius: borderRadius.sm,
+                              fontWeight: 600,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: spacing.xs
+                            }}>
+                              <span>Attempts: {studentQuizData.attempts}</span>
+                            </div>
+                            <div style={{
+                              fontSize: '0.85rem',
+                              padding: `${spacing.xs}px ${spacing.sm}px`,
+                              background: studentQuizData.best_score >= quiz.passing_score 
+                                ? `${colors.success}20` 
+                                : `${colors.warning}20`,
+                              color: studentQuizData.best_score >= quiz.passing_score 
+                                ? colors.success 
+                                : colors.warning,
+                              borderRadius: borderRadius.sm,
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: spacing.xs
+                            }}>
+                              <Award size={14} />
+                              <span>Highest: {studentQuizData.best_score}%</span>
+                            </div>
+                          </>
+                        )}
+                        {!studentQuizData || studentQuizData.attempts === 0 ? (
+                          <div style={{
+                            fontSize: '0.8rem',
+                            padding: `${spacing.xs}px ${spacing.sm}px`,
+                            background: quiz.is_active ? `${colors.success}20` : `${colors.mutedText}20`,
+                            color: quiz.is_active ? colors.success : colors.mutedText,
+                            borderRadius: borderRadius.sm,
+                            fontWeight: 600
+                          }}>
+                            {quiz.is_active ? 'Active' : 'Inactive'}
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                     {(userRole === 'admin' || userRole === 'teacher') && (
@@ -5268,7 +5411,8 @@ const SubjectModulePage = () => {
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
