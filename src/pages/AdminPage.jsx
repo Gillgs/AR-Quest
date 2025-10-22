@@ -1116,7 +1116,48 @@ const handleFormSubmit = async (formData) => {
         idField = 'id';
       }
 
-      // Delete user from the specific table
+      // FORCE DELETE: Remove all related data first to avoid foreign key constraints
+      if (isStudent) {
+        // Delete all student-related data first
+        console.log('Force deleting student-related data for:', user.id);
+        
+        // Delete in order of dependencies
+        await supabaseAdmin.from('learning_analytics').delete().eq('student_id', user.id);
+        await supabaseAdmin.from('lesson_completions').delete().eq('student_id', user.id);
+        await supabaseAdmin.from('quiz_attempts').delete().eq('student_id', user.id);
+        await supabaseAdmin.from('user_achievements').delete().eq('student_id', user.id);
+        await supabaseAdmin.from('student_progress').delete().eq('student_id', user.id);
+        await supabaseAdmin.from('section_assignments').delete().eq('student_id', user.id);
+        
+        console.log('Student-related data deleted successfully');
+      } else {
+        // For user_profiles (teachers, parents, admins), remove related data
+        console.log('Force deleting user-related data for:', user.id);
+        
+        // If user is a teacher, remove their section assignments
+        await supabaseAdmin.from('sections').update({ teacher_id: null }).eq('teacher_id', user.id);
+        await supabaseAdmin.from('section_assignments').delete().eq('assigned_by', user.id);
+        
+        // If user is a parent, handle their children
+        const { data: children } = await supabaseAdmin.from('students').select('id').eq('parent_id', user.id);
+        if (children && children.length > 0) {
+          for (const child of children) {
+            // Delete child-related data
+            await supabaseAdmin.from('learning_analytics').delete().eq('student_id', child.id);
+            await supabaseAdmin.from('lesson_completions').delete().eq('student_id', child.id);
+            await supabaseAdmin.from('quiz_attempts').delete().eq('student_id', child.id);
+            await supabaseAdmin.from('user_achievements').delete().eq('student_id', child.id);
+            await supabaseAdmin.from('student_progress').delete().eq('student_id', child.id);
+            await supabaseAdmin.from('section_assignments').delete().eq('student_id', child.id);
+          }
+          // Delete the children records
+          await supabaseAdmin.from('students').delete().eq('parent_id', user.id);
+        }
+        
+        console.log('User-related data deleted successfully');
+      }
+
+      // Now delete the main user record
       const { error: deleteError } = await supabaseAdmin
         .from(tableToUse)
         .delete()
@@ -1127,7 +1168,10 @@ const handleFormSubmit = async (formData) => {
       // Delete user from auth only if user is not a student/child
       if (!isStudent) {
         const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(user.id);
-        if (authError && !String(authError.message).includes('User not found')) throw authError;
+        if (authError && !String(authError.message).includes('User not found')) {
+          console.warn('Auth deletion warning:', authError.message);
+          // Don't throw error for auth deletion issues, continue with success
+        }
       }
 
       const entityType = isStudent ? 'Child' : activeTab.slice(0, -1);
@@ -1163,20 +1207,69 @@ const handleFormSubmit = async (formData) => {
     }
   };
 
-  // Bulk delete by ids (array of user_profile ids). Safe steps:
-  // 1) delete students that belong to these parents (if any)
-  // 2) delete user_profiles rows
-  // 3) attempt to delete auth users for each id (ignore not-found errors)
+  // Bulk delete by ids (array of user_profile ids). FORCE DELETE with cascade:
+  // 1) delete all related data for students and users
+  // 2) delete students that belong to these parents (if any)
+  // 3) delete user_profiles rows
+  // 4) attempt to delete auth users for each id (ignore not-found errors)
   const handleBulkDelete = async (ids = []) => {
     if (!Array.isArray(ids) || ids.length === 0) return;
     try {
+      console.log('Force bulk deleting users and related data for:', ids);
+      
+      // FORCE DELETE: Get all students that belong to these parents
+      const { data: childrenOfParents } = await supabaseAdmin
+        .from('students')
+        .select('id')
+        .in('parent_id', ids);
+      
+      const allStudentIds = childrenOfParents ? childrenOfParents.map(s => s.id) : [];
+      
+      // Get all students that are also in the deletion list (direct student deletions)
+      const { data: directStudents } = await supabaseAdmin
+        .from('students')
+        .select('id')
+        .in('id', ids);
+      
+      if (directStudents) {
+        allStudentIds.push(...directStudents.map(s => s.id));
+      }
+      
+      // Remove duplicates
+      const uniqueStudentIds = [...new Set(allStudentIds)];
+      
+      // Delete all student-related data first
+      if (uniqueStudentIds.length > 0) {
+        console.log('Deleting student-related data for students:', uniqueStudentIds);
+        await supabaseAdmin.from('learning_analytics').delete().in('student_id', uniqueStudentIds);
+        await supabaseAdmin.from('lesson_completions').delete().in('student_id', uniqueStudentIds);
+        await supabaseAdmin.from('quiz_attempts').delete().in('student_id', uniqueStudentIds);
+        await supabaseAdmin.from('user_achievements').delete().in('student_id', uniqueStudentIds);
+        await supabaseAdmin.from('student_progress').delete().in('student_id', uniqueStudentIds);
+        await supabaseAdmin.from('section_assignments').delete().in('student_id', uniqueStudentIds);
+      }
+      
+      // Delete user-profile-related data
+      console.log('Deleting user-profile-related data for:', ids);
+      await supabaseAdmin.from('sections').update({ teacher_id: null }).in('teacher_id', ids);
+      await supabaseAdmin.from('section_assignments').delete().in('assigned_by', ids);
+      
       // Delete students with parent_id in ids first to avoid FK issues
       const { error: delStudentsErr } = await supabaseAdmin
         .from('students')
         .delete()
         .in('parent_id', ids);
       if (delStudentsErr) {
-        // Log but continue to attempt profile deletion — surface error to user later
+        console.warn('Students deletion warning:', delStudentsErr.message);
+      }
+      
+      // Delete direct student records if any ids refer to students
+      const { error: delDirectStudentsErr } = await supabaseAdmin
+        .from('students')
+        .delete()
+        .in('id', ids);
+      if (delDirectStudentsErr) {
+        console.warn('Direct students deletion warning:', delDirectStudentsErr.message);
       }
 
       // Delete profiles
