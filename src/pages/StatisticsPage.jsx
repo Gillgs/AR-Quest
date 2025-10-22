@@ -171,6 +171,13 @@ const StatisticsPage = () => {
       borderWidth: 1,
     }]
   });
+  const [sectionStats, setSectionStats] = useState({
+    totalSections: 0,
+    totalStudents: 0,
+    averagePerSection: 0,
+    unassignedCount: 0,
+    sectionsWithStudents: 0
+  });
   const [loadingSectionPie, setLoadingSectionPie] = useState(true);
   // For subject performance data
   const [subjectPerformanceData, setSubjectPerformanceData] = useState({
@@ -225,35 +232,90 @@ const StatisticsPage = () => {
           .select("id, section_id, enrollment_date, is_active, first_name, last_name")
           .order('enrollment_date', { ascending: false });
         if (studentError) throw studentError;
-        // Count students per section
+        // Count students per section with more detailed analysis
         const sectionCounts = {};
+        const sectionDetails = {};
+        
+        sections.forEach(section => {
+          sectionCounts[section.id] = 0;
+          sectionDetails[section.id] = {
+            name: section.name,
+            classroom_number: section.classroom_number,
+            time_period: section.time_period,
+            students: [],
+            active_students: 0,
+            recent_enrollments: 0
+          };
+        });
+
+        const oneMonthAgo = new Date();
+        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
         students.forEach(s => {
-          if (s.section_id) {
-            sectionCounts[s.section_id] = (sectionCounts[s.section_id] || 0) + 1;
+          if (s.section_id && sectionDetails[s.section_id]) {
+            sectionCounts[s.section_id]++;
+            sectionDetails[s.section_id].students.push(s);
+            
+            if (s.is_active !== false) {
+              sectionDetails[s.section_id].active_students++;
+            }
+            
+            if (s.enrollment_date && new Date(s.enrollment_date) > oneMonthAgo) {
+              sectionDetails[s.section_id].recent_enrollments++;
+            }
           }
         });
-        // Prepare chart data for section distribution
+
+        // Prepare enhanced chart data for section distribution
         const labels = [];
         const dataArr = [];
-        const colors = [chartColors.primary, chartColors.warning, chartColors.success, chartColors.secondary, chartColors.danger, chartColors.purple, chartColors.orange, chartColors.teal, chartColors.pink];
+        const colors = [
+          'rgba(54, 162, 235, 0.8)',   // Blue
+          'rgba(255, 99, 132, 0.8)',   // Red
+          'rgba(75, 192, 192, 0.8)',   // Green
+          'rgba(255, 205, 86, 0.8)',   // Yellow
+          'rgba(153, 102, 255, 0.8)',  // Purple
+          'rgba(255, 159, 64, 0.8)',   // Orange
+          'rgba(199, 199, 199, 0.8)',  // Grey
+          'rgba(83, 102, 255, 0.8)',   // Indigo
+          'rgba(255, 99, 255, 0.8)'    // Pink
+        ];
         const bgArr = [];
         const borderArr = [];
+        
         sections.forEach((section, idx) => {
-          const label = `${section.classroom_number} ${section.name} ${section.time_period.charAt(0).toUpperCase() + section.time_period.slice(1)}`;
+          const count = sectionCounts[section.id] || 0;
+          const details = sectionDetails[section.id];
+          
+          // Create more descriptive labels
+          const timeLabel = section.time_period.charAt(0).toUpperCase() + section.time_period.slice(1);
+          const label = `${section.classroom_number} - ${section.name} (${timeLabel})`;
+          
           labels.push(label);
-          dataArr.push(sectionCounts[section.id] || 0);
+          dataArr.push(count);
           bgArr.push(colors[idx % colors.length]);
-          borderArr.push(colors[idx % colors.length]);
+          borderArr.push(colors[idx % colors.length].replace('0.8', '1'));
         });
-        // Include students without a section (unassigned) so totals match the DB
-        const unassignedCount = students.filter(s => !s.section_id).length;
+        
+        // Include students without a section (unassigned) with improved styling
+        const unassignedStudents = students.filter(s => !s.section_id);
+        const unassignedCount = unassignedStudents.length;
         if (unassignedCount > 0) {
-          labels.push('Unassigned');
-          const neutralColor = 'rgba(200,200,200,0.85)';
+          labels.push('Unassigned Students');
+          const neutralColor = 'rgba(156, 163, 175, 0.8)'; // Better neutral color
           dataArr.push(unassignedCount);
           bgArr.push(neutralColor);
-          borderArr.push(neutralColor);
+          borderArr.push('rgba(156, 163, 175, 1)');
         }
+
+        // Store additional statistics for display
+        setSectionStats({
+          totalSections: sections.length,
+          totalStudents: students.length,
+          averagePerSection: sections.length > 0 ? Math.round(students.filter(s => s.section_id).length / sections.length) : 0,
+          unassignedCount,
+          sectionsWithStudents: sections.filter(s => sectionCounts[s.id] > 0).length
+        });
         setSectionStudentData({
           labels,
           datasets: [{
@@ -416,42 +478,82 @@ const StatisticsPage = () => {
 
         if (subjectError) throw subjectError;
 
-        // Get quiz performance for each subject
+        // Get quiz performance for each subject with improved filtering
         const performancePromises = subjectStats.map(async (subject) => {
+          // Get quiz attempts with proper filtering (same as progressUtils)
           const { data: quizData, error: quizError } = await client
             .from('quiz_attempts')
             .select(`
               score,
               student_id,
+              quiz_id,
+              attempt_number,
               quizzes!inner(
+                id,
+                title,
+                passing_score,
+                modules!inner(
+                  subject_id
+                )
+              )
+            `)
+            .eq('quizzes.modules.subject_id', subject.id)
+            .not('score', 'is', null); // Only include attempts with valid scores
+
+          // Get lesson completion data for this subject
+          const { data: lessonData, error: lessonError } = await client
+            .from('lesson_completions')
+            .select(`
+              student_id,
+              lesson_id,
+              lessons!inner(
                 id,
                 modules!inner(
                   subject_id
                 )
               )
             `)
-            .eq('quizzes.modules.subject_id', subject.id);
+            .eq('lessons.modules.subject_id', subject.id);
 
           if (quizError) {
             console.warn(`Error fetching quiz data for ${subject.name}:`, quizError);
-            return {
-              name: subject.name,
-              average_score: 0,
-              highest_score: 0,
-              total_attempts: 0,
-              students_attempted: 0
-            };
+          }
+          if (lessonError) {
+            console.warn(`Error fetching lesson data for ${subject.name}:`, lessonError);
           }
 
-          const scores = quizData?.map(attempt => attempt.score) || [];
-          const uniqueStudents = [...new Set(quizData?.map(attempt => attempt.student_id) || [])];
+          // Calculate quiz statistics - use best scores per student per quiz
+          const studentQuizBestScores = {};
+          (quizData || []).forEach(attempt => {
+            const key = `${attempt.student_id}_${attempt.quiz_id}`;
+            if (!studentQuizBestScores[key] || attempt.score > studentQuizBestScores[key]) {
+              studentQuizBestScores[key] = attempt.score;
+            }
+          });
+
+          const bestScores = Object.values(studentQuizBestScores);
+          const uniqueQuizStudents = [...new Set((quizData || []).map(attempt => attempt.student_id))];
+          const uniqueLessonStudents = [...new Set((lessonData || []).map(completion => completion.student_id))];
+          const allUniqueStudents = [...new Set([...uniqueQuizStudents, ...uniqueLessonStudents])];
+
+          // Calculate pass rate
+          const quizzesWithPassingScore = (quizData || []).filter(attempt => {
+            const quiz = attempt.quizzes;
+            const passingScore = quiz?.passing_score || 70;
+            return attempt.score >= passingScore;
+          });
+          const passRate = quizData?.length > 0 ? (quizzesWithPassingScore.length / quizData.length) * 100 : 0;
 
           return {
             name: subject.name,
-            average_score: scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0,
-            highest_score: scores.length > 0 ? Math.max(...scores) : 0,
-            total_attempts: scores.length,
-            students_attempted: uniqueStudents.length
+            average_score: bestScores.length > 0 ? bestScores.reduce((a, b) => a + b, 0) / bestScores.length : 0,
+            highest_score: bestScores.length > 0 ? Math.max(...bestScores) : 0,
+            total_attempts: (quizData || []).length,
+            students_attempted: allUniqueStudents.length,
+            lessons_completed: (lessonData || []).length,
+            pass_rate: passRate,
+            quiz_students: uniqueQuizStudents.length,
+            lesson_students: uniqueLessonStudents.length
           };
         });
 
@@ -1012,15 +1114,26 @@ const StatisticsPage = () => {
                                               size: isMobile ? 10 : 14
                                             },
                                             padding: isMobile ? 10 : 20,
-                                            boxWidth: isMobile ? 12 : 15
+                                            boxWidth: isMobile ? 12 : 15,
+                                            generateLabels: function(chart) {
+                                              const data = chart.data;
+                                              return data.labels.map((label, i) => {
+                                                const count = data.datasets[0].data[i];
+                                                const percentage = ((count / data.datasets[0].data.reduce((a, b) => a + b, 0)) * 100).toFixed(1);
+                                                return {
+                                                  text: `${label}: ${count} (${percentage}%)`,
+                                                  fillStyle: data.datasets[0].backgroundColor[i],
+                                                  strokeStyle: data.datasets[0].borderColor[i],
+                                                  lineWidth: 2,
+                                                  hidden: false,
+                                                  index: i
+                                                };
+                                              });
+                                            }
                                           }
                                         },
                                         title: {
-                                          ...baseChartOptions.plugins.title,
-                                          font: {
-                                            ...baseChartOptions.plugins.title.font,
-                                            size: isMobile ? 14 : 18
-                                          }
+                                          display: false // Remove title to save space
                                         },
                                         tooltip: {
                                           ...baseChartOptions.plugins.tooltip,
@@ -1028,18 +1141,22 @@ const StatisticsPage = () => {
                                             ...baseChartOptions.plugins.tooltip.titleFont,
                                             size: isMobile ? 12 : 14
                                           },
+                                          callbacks: {
+                                            label: function(context) {
+                                              const label = context.label || '';
+                                              const value = context.parsed;
+                                              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                              const percentage = ((value / total) * 100).toFixed(1);
+                                              return `${label}: ${value} students (${percentage}%)`;
+                                            },
+                                            afterLabel: function(context) {
+                                              const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                              return `Total: ${total} students`;
+                                            }
+                                          },
                                           bodyFont: {
                                             ...baseChartOptions.plugins.tooltip.bodyFont,
                                             size: isMobile ? 11 : 13
-                                          },
-                                          callbacks: {
-                                            label: function(context) {
-                                              const dataset = context.dataset;
-                                              const total = dataset.data.reduce((acc, data) => acc + data, 0);
-                                              const value = dataset.data[context.dataIndex];
-                                              const percentage = ((value / total) * 100).toFixed(1);
-                                              return `${context.label}: ${value} (${percentage}%)`;
-                                            }
                                           }
                                         }
                                       }
@@ -1051,13 +1168,26 @@ const StatisticsPage = () => {
                             <Card.Footer className="bg-transparent" style={{
                               borderTop: '1px solid rgba(0,0,0,0.04)',
                               padding: isMobile ? '0.75rem 1.5rem' : '1rem 2rem',
-                              fontSize: isMobile ? '0.9rem' : '1rem',
+                              fontSize: isMobile ? '0.85rem' : '0.95rem',
                               background: 'rgba(245,59,87,0.03)',
                               borderRadius: '0 0 24px 24px'
                             }}>
-                              <small className="text-muted">
-                                Distribution of students per section (Classroom + Morning/Afternoon)
-                              </small>
+                              <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '0.5rem' : '2rem', alignItems: isMobile ? 'flex-start' : 'center' }}>
+                                <small className="text-muted">
+                                  <strong>{sectionStats.totalStudents}</strong> students across <strong>{sectionStats.totalSections}</strong> sections
+                                </small>
+                                <small className="text-muted">
+                                  Avg: <strong>{sectionStats.averagePerSection}</strong> students per section
+                                </small>
+                                {sectionStats.unassignedCount > 0 && (
+                                  <small className="text-warning">
+                                    <strong>{sectionStats.unassignedCount}</strong> unassigned students
+                                  </small>
+                                )}
+                                <small className="text-muted">
+                                  <strong>{sectionStats.sectionsWithStudents}</strong> active sections
+                                </small>
+                              </div>
                             </Card.Footer>
                           </Card>
                         </Col>
