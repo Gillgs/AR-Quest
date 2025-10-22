@@ -45,8 +45,6 @@ const CreateQuizModal = ({
   setNewQuizTimeLimit,
   newQuizPassingScore,
   setNewQuizPassingScore,
-  newQuizMaxAttempts,
-  setNewQuizMaxAttempts,
   quizQuestions,
   setQuizQuestions,
   handleSubmitQuiz,
@@ -252,10 +250,6 @@ const CreateQuizModal = ({
               <div style={{ marginBottom: '12px' }}>
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>Passing Score (%)</label>
                 <input type='number' value={newQuizPassingScore} onChange={e => { const val = e.target.value; if (val === '') setNewQuizPassingScore(''); else setNewQuizPassingScore(Math.max(1, Math.min(100, parseInt(val)))); }} min='1' max='100' style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }} />
-              </div>
-              <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>Max Attempts</label>
-                <input type='number' value={newQuizMaxAttempts} onChange={e => { const val = e.target.value; if (val === '') setNewQuizMaxAttempts(''); else setNewQuizMaxAttempts(Math.max(1, Math.min(10, parseInt(val)))); }} min='1' max='10' style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }} />
               </div>
             </div>
           </div>
@@ -1110,7 +1104,6 @@ const SubjectModulePage = () => {
   const [newQuizQuestionCount, setNewQuizQuestionCount] = useState(5);
   const [newQuizTimeLimit, setNewQuizTimeLimit] = useState(15);
   const [newQuizPassingScore, setNewQuizPassingScore] = useState(70);
-  const [newQuizMaxAttempts, setNewQuizMaxAttempts] = useState(3);
   
   // Quiz questions state
   const [quizQuestions, setQuizQuestions] = useState([
@@ -1879,7 +1872,6 @@ const SubjectModulePage = () => {
     setNewQuizQuestionCount(5);
     setNewQuizTimeLimit(15);
     setNewQuizPassingScore(70);
-    setNewQuizMaxAttempts(3);
     setCurrentModuleId(null);
     setQuizQuestions([
       {
@@ -2402,10 +2394,6 @@ const SubjectModulePage = () => {
       alert('Passing score must be between 0 and 100');
       return;
     }
-    if (newQuizMaxAttempts !== '' && (isNaN(Number(newQuizMaxAttempts)) || Number(newQuizMaxAttempts) < 1 || Number(newQuizMaxAttempts) > 50)) {
-      alert('Max attempts must be a whole number between 1 and 50');
-      return;
-    }
 
     try {
       const quizData = {
@@ -2416,7 +2404,6 @@ const SubjectModulePage = () => {
         // Coerce empty / '' values to null so DB defaults can be used
         timeLimitMinutes: newQuizTimeLimit === '' ? null : Number(newQuizTimeLimit),
         passingScore: newQuizPassingScore === '' ? null : Number(newQuizPassingScore),
-        maxAttempts: newQuizMaxAttempts === '' ? null : Number(newQuizMaxAttempts),
         shuffleQuestions: false,
         shuffleOptions: true,
         showCorrectAnswers: true,
@@ -2482,7 +2469,6 @@ const SubjectModulePage = () => {
         total_questions: formattedQuestions.length,
         time_limit_minutes: newQuizTimeLimit === '' ? null : Number(newQuizTimeLimit),
         passing_score: newQuizPassingScore === '' ? null : Number(newQuizPassingScore),
-        max_attempts: newQuizMaxAttempts === '' ? null : Number(newQuizMaxAttempts),
         questions_data: {
           questions: sampleQuestions,
           settings: {
@@ -3472,7 +3458,6 @@ const SubjectModulePage = () => {
     const [editDescription, setEditDescription] = useState('');
     const [editPassingScore, setEditPassingScore] = useState(70);
     const [editTimeLimit, setEditTimeLimit] = useState(15);
-    const [editMaxAttempts, setEditMaxAttempts] = useState(3);
     const [editQuizQuestions, setEditQuizQuestions] = useState([
       {
         id: 1,
@@ -3488,7 +3473,6 @@ const SubjectModulePage = () => {
         setEditDescription(editingQuiz.description || '');
         setEditPassingScore(editingQuiz.passing_score || 70);
         setEditTimeLimit(editingQuiz.time_limit_minutes || 15);
-        setEditMaxAttempts(editingQuiz.max_attempts || 3);
         
         // Load existing questions
         if (editingQuiz.questions_data?.questions && editingQuiz.questions_data.questions.length > 0) {
@@ -3720,7 +3704,6 @@ const SubjectModulePage = () => {
         setEditDescription('');
         setEditPassingScore(70);
         setEditTimeLimit(15);
-        setEditMaxAttempts(3);
         setEditQuizQuestions([
           {
             id: 1,
@@ -3769,7 +3752,6 @@ const SubjectModulePage = () => {
           description: editDescription.trim(),
           passing_score: editPassingScore === '' ? null : Math.max(0, Math.min(100, Number(editPassingScore))),
           time_limit_minutes: editTimeLimit === '' ? null : (Number(editTimeLimit) <= 0 ? null : Number(editTimeLimit)),
-          max_attempts: editMaxAttempts === '' ? null : Math.max(1, Number(editMaxAttempts)),
           questions_data: {
             questions: formattedQuestions,
             total_questions: validQuestions.length
@@ -3925,27 +3907,6 @@ const SubjectModulePage = () => {
                     border: `2px solid ${colors.borderColor}`, background: colors.cardBg,
                     color: colors.textColor, fontSize: '1rem', position: 'relative', zIndex: 1
                   }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontWeight: 600, marginBottom: spacing.sm, color: colors.textColor }}>
-                  Max Attempts
-                </label>
-                <input
-                  type="number"
-                  value={editMaxAttempts}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === '') setEditMaxAttempts('');
-                    else setEditMaxAttempts(Math.max(1, Math.min(10, parseInt(val))));
-                  }}
-                  style={{
-                    width: '100%', padding: spacing.md, borderRadius: borderRadius.lg,
-                    border: `2px solid ${colors.borderColor}`, background: colors.cardBg,
-                    color: colors.textColor, fontSize: '1rem', position: 'relative', zIndex: 1
-                  }}
-                  min="1"
-                  max="10"
                 />
               </div>
             </div>
@@ -4593,12 +4554,6 @@ const SubjectModulePage = () => {
                 <TrendingUp size={16} color={colors.success} />
                 <span style={{ fontSize: '0.95rem', color: colors.textColor, fontWeight: 500 }}>
                   {selectedQuizDetail.passing_score || 70}% to pass
-                </span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
-                <Users size={16} color={colors.warning} />
-                <span style={{ fontSize: '0.95rem', color: colors.textColor, fontWeight: 500 }}>
-                  {selectedQuizDetail.max_attempts || 3} attempts
                 </span>
               </div>
             </div>
@@ -5850,8 +5805,6 @@ const SubjectModulePage = () => {
     setNewQuizTimeLimit={setNewQuizTimeLimit}
     newQuizPassingScore={newQuizPassingScore}
     setNewQuizPassingScore={setNewQuizPassingScore}
-    newQuizMaxAttempts={newQuizMaxAttempts}
-    setNewQuizMaxAttempts={setNewQuizMaxAttempts}
     moduleColor={subjectColor}
     quizQuestions={quizQuestions}
     setQuizQuestions={setQuizQuestions}
