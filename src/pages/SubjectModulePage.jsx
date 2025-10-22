@@ -770,8 +770,8 @@ const SubjectModulePage = () => {
           started_at
         `)
         .eq('student_id', studentId)
-        .not('completed_at', 'is', null) // Only completed attempts
-        .order('completed_at', { ascending: false });
+        .not('score', 'is', null) // Only attempts with a score (completed or in-progress with score)
+        .order('attempt_number', { ascending: false });
 
       if (error) {
         return {};
@@ -825,10 +825,12 @@ const SubjectModulePage = () => {
           });
           
           // Update best score and total attempts
-          quizAttemptsMap[quizId].best_score = Math.max(
-            quizAttemptsMap[quizId].best_score, 
-            attempt.score
-          );
+          if (attempt.score !== null && attempt.score !== undefined) {
+            quizAttemptsMap[quizId].best_score = Math.max(
+              quizAttemptsMap[quizId].best_score, 
+              attempt.score
+            );
+          }
           quizAttemptsMap[quizId].total_attempts = quizAttemptsMap[quizId].attempts.length;
         });
         
@@ -990,6 +992,15 @@ const SubjectModulePage = () => {
   })();
   // Local tab state for sidebar
   const [activeTab, setActiveTab] = useState('Modules');
+
+  // Responsive state: detect mobile widths and adjust layout
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth <= 768 : false);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   
   // Sidebar navigation handler
   const handleSidebarNav = (item) => {
@@ -4811,20 +4822,22 @@ const SubjectModulePage = () => {
                   {getDifficultyCategory(module.difficultyLevel)}
                 </div>
               )}
-              {/* Display progress percentage */}
-              <div style={{
-                marginLeft: spacing.sm,
-                padding: `${spacing.xs}px ${spacing.md}px`,
-                background: `${module.color}15`,
-                color: module.color,
-                borderRadius: borderRadius.default,
-                fontSize: '1rem',
-                fontWeight: 700,
-                minWidth: '60px',
-                textAlign: 'center'
-              }}>
-                {displayProgress}%
-              </div>
+              {/* Display progress percentage (hidden for teacher view) */}
+              {String(userRole).toLowerCase() !== 'teacher' && (
+                <div style={{
+                  marginLeft: spacing.sm,
+                  padding: `${spacing.xs}px ${spacing.md}px`,
+                  background: `${module.color}15`,
+                  color: module.color,
+                  borderRadius: borderRadius.default,
+                  fontSize: '1rem',
+                  fontWeight: 700,
+                  minWidth: '60px',
+                  textAlign: 'center'
+                }}>
+                  {displayProgress}%
+                </div>
+              )}
             </div>
             
             {module.description && (
@@ -5241,24 +5254,24 @@ const SubjectModulePage = () => {
                       <p style={{ color: colors.mutedText, margin: 0, marginTop: 4, fontSize: '0.9rem' }}>
                         {quiz.description}
                       </p>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, marginTop: 8, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? spacing.sm : spacing.md, marginTop: isMobile ? 6 : 8, flexWrap: 'wrap', fontSize: isMobile ? '0.8rem' : '0.9rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
                           <FileText size={14} color={colors.mutedText} />
-                          <span style={{ fontSize: '0.85rem', color: colors.mutedText }}>
+                          <span style={{ fontSize: isMobile ? '0.75rem' : '0.85rem', color: colors.mutedText }}>
                             {quiz.total_questions} questions
                           </span>
                         </div>
                         {quiz.time_limit_minutes && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
                             <Clock size={14} color={colors.mutedText} />
-                            <span style={{ fontSize: '0.85rem', color: colors.mutedText }}>
+                            <span style={{ fontSize: isMobile ? '0.75rem' : '0.85rem', color: colors.mutedText }}>
                               {quiz.time_limit_minutes} min
                             </span>
                           </div>
                         )}
                         <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
                           <Award size={14} color={colors.mutedText} />
-                          <span style={{ fontSize: '0.85rem', color: colors.mutedText }}>
+                          <span style={{ fontSize: isMobile ? '0.75rem' : '0.85rem', color: colors.mutedText }}>
                             {quiz.passing_score}% to pass
                           </span>
                         </div>
@@ -5387,20 +5400,21 @@ const SubjectModulePage = () => {
       <div style={{ 
         minHeight: '100vh',
         background: colors.mainBg,
-        display: 'flex'
+        display: 'flex',
+        flexDirection: isMobile ? 'column' : 'row'
       }}>
-        {/* SideMenu Component */}
-        <SideMenu selectedItem="Modules" />
+        {/* SideMenu Component - hidden on mobile */}
+        {!isMobile && <SideMenu selectedItem="Modules" />}
 
-        {/* Enhanced Sidebar - keeping the original design but adjusting position */}
+        {/* Enhanced Sidebar - collapses on mobile */}
         <div style={{ 
-          width: 280,
+          width: isMobile ? '100%' : 280,
           background: colors.contentBg,
-          padding: spacing.lg,
+          padding: isMobile ? spacing.md : spacing.lg,
           display: 'flex',
           flexDirection: 'column',
           boxShadow: shadows.lg,
-          marginLeft: 236, // Adjust for SideMenu width
+          marginLeft: isMobile ? 0 : 236, // Adjust for SideMenu width
           position: 'relative'
         }}>
           <button 
@@ -5548,16 +5562,18 @@ const SubjectModulePage = () => {
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
+              flexDirection: isMobile ? 'column' : 'row',
+              gap: isMobile ? spacing.md : 0,
               marginBottom: spacing['2xl'],
               background: colors.contentBg,
-              padding: spacing.lg,
+              padding: isMobile ? spacing.md : spacing.lg,
               borderRadius: borderRadius.xl,
               boxShadow: shadows.md
             }}>
               <div>
                 <h1 style={{
                   fontWeight: 700,
-                  fontSize: '2rem',
+                  fontSize: isMobile ? '1.25rem' : '2rem',
                   margin: 0,
                   color: colors.textColor,
                   marginBottom: spacing.xs
@@ -6006,7 +6022,40 @@ const SubjectModulePage = () => {
                       </p>
                     </div>
                   ) : (
-                        modules.map((m, idx) => (
+                        modules.map((m, idx) => {
+                          // Calculate progress based on user role
+                          let studentProgress = m.progress || 0;
+                          
+                          if (String(userRole).toLowerCase() === 'teacher') {
+                            // For teachers, show class-wide completion percentage
+                            if (studentsToShow.length > 0) {
+                              let totalCompletion = 0;
+                              let studentCount = 0;
+                              
+                              studentsToShow.forEach(student => {
+                                const studentModuleProgress = student?.progress?.modules?.find(
+                                  pm => String(pm.id) === String(m.id) || pm.title === m.name
+                                );
+                                if (studentModuleProgress) {
+                                  totalCompletion += studentModuleProgress.completion || 0;
+                                  studentCount++;
+                                }
+                              });
+                              
+                              studentProgress = studentCount > 0 ? Math.round(totalCompletion / studentCount) : 0;
+                            }
+                          } else if (studentsToShow.length > 0) {
+                            // For parents/students, show individual student progress
+                            const currentStudent = studentsToShow[0]; // Parent will only have one student
+                            const studentModuleProgress = currentStudent?.progress?.modules?.find(
+                              pm => String(pm.id) === String(m.id) || pm.title === m.name
+                            );
+                            if (studentModuleProgress) {
+                              studentProgress = studentModuleProgress.completion || 0;
+                            }
+                          }
+                          
+                          return (
                         <div key={m.id || m.name || idx} style={{
                         background: colors.contentBg,
                         border: `2px solid ${m.color || subjectColor || colors.borderColor}`,
@@ -6016,17 +6065,19 @@ const SubjectModulePage = () => {
                         transition: 'all 0.3s ease',
                         overflow: 'hidden'
                       }}>
-                        <div style={{ display: 'flex', alignItems: 'center', padding: spacing.lg }}>
-                          <div style={{ width: 6, height: 40, background: m.color || colors.primary, borderRadius: borderRadius.sm, marginRight: spacing.md }} />
-                          <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', padding: isMobile ? spacing.md : spacing.lg, flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? spacing.sm : 0 }}>
+                          <div style={{ width: isMobile ? '100%' : 6, height: isMobile ? 8 : 40, background: m.color || colors.primary, borderRadius: borderRadius.sm, marginRight: isMobile ? 0 : spacing.md }} />
+                          <div style={{ flex: 1, width: '100%' }}>
                             <h3 style={{ fontWeight: 700, fontSize: '1.25rem', margin: 0, color: colors.textColor }}>{m.name}</h3>
                             <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, marginTop: 8 }}>
-                              <div style={{ flex: 1 }}>
+                              <div style={{ flex: 1, width: '100%' }}>
                                 <div className="progress" style={{ height: '12px', borderRadius: '8px', background: 'rgba(0,0,0,0.04)' }}>
-                                  <div className="progress-bar" role="progressbar" style={{ width: `${m.progress || 0}%`, background: m.color || colors.primary, height: '12px', borderRadius: '8px' }} aria-valuenow={m.progress || 0} aria-valuemin="0" aria-valuemax="100"></div>
+                                  <div className="progress-bar" role="progressbar" style={{ width: `${studentProgress}%`, background: m.color || colors.primary, height: '12px', borderRadius: '8px' }} aria-valuenow={studentProgress} aria-valuemin="0" aria-valuemax="100"></div>
                                 </div>
                               </div>
-                              <div style={{ marginLeft: spacing.md, fontWeight: 700, color: m.color || colors.primary }}>{m.progress || 0}%</div>
+                              {!isMobile && (
+                                <div style={{ marginLeft: spacing.md, fontWeight: 700, color: m.color || colors.primary }}>{studentProgress}%</div>
+                              )}
                             </div>
                           </div>
                           <div style={{ marginLeft: spacing.md }}>
@@ -6180,7 +6231,8 @@ const SubjectModulePage = () => {
                           </div>
                         )}
                       </div>
-                    ))
+                          );
+                        })
                   )
                 )}
               </div>
