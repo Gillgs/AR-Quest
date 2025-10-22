@@ -41,7 +41,7 @@ export const progressUtils = {
 
       const { data: lessonCompletions, error: lessonError } = await lessonQuery;
 
-      // Quiz attempts query
+      // Quiz attempts query - include all attempts with scores
       let quizQuery = supabase
         .from('quiz_attempts')
         .select(`
@@ -71,7 +71,8 @@ export const progressUtils = {
           )
         `)
         .eq('student_id', studentId)
-        .order('completed_at', { ascending: false });
+        .not('score', 'is', null) // Include all attempts with scores
+        .order('attempt_number', { ascending: false });
 
       if (moduleId) {
         quizQuery = quizQuery.eq('quizzes.module_id', moduleId);
@@ -175,7 +176,7 @@ export const progressUtils = {
 
       const { data: quizzes, error: quizzesError } = await quizzesQuery;
 
-      // Get all quiz attempts for these students
+      // Get all quiz attempts for these students - include all attempts with scores
       let attemptsQuery = supabase
         .from('quiz_attempts')
         .select(`
@@ -187,7 +188,8 @@ export const progressUtils = {
           attempt_number,
           completed_at
         `)
-        .in('student_id', studentIds);
+        .in('student_id', studentIds)
+        .not('score', 'is', null); // Include all attempts with scores
 
       const { data: attempts, error: attemptsError } = await attemptsQuery;
 
@@ -221,7 +223,8 @@ export const progressUtils = {
         // Calculate best scores per student
         const bestScores = Object.keys(studentAttempts).map(studentId => {
           const studentAtts = studentAttempts[studentId];
-          return Math.max(...studentAtts.map(a => a.score));
+          const validScores = studentAtts.map(a => a.score).filter(score => score !== null && score !== undefined);
+          return validScores.length > 0 ? Math.max(...validScores) : 0;
         });
 
         const averageScore = bestScores.length > 0 ? bestScores.reduce((a, b) => a + b, 0) / bestScores.length : 0;
@@ -299,7 +302,7 @@ export const progressUtils = {
         .eq('module_id', moduleId)
         .eq('is_active', true);
 
-      // Get quiz attempts for this student
+      // Get quiz attempts for this student - include all attempts with scores
       const { data: quizAttempts, error: attemptsError } = await supabase
         .from('quiz_attempts')
         .select(`
@@ -311,7 +314,8 @@ export const progressUtils = {
           completed_at
         `)
         .eq('student_id', studentId)
-        .order('completed_at', { ascending: false });
+        .not('score', 'is', null) // Include all attempts with scores
+        .order('attempt_number', { ascending: false });
 
       // Process lessons with completion status
       const completionMap = {};
@@ -340,7 +344,8 @@ export const progressUtils = {
 
       const quizzesWithProgress = (quizzes || []).map(quiz => {
         const attempts = attemptsMap[quiz.id] || [];
-        const bestScore = attempts.length > 0 ? Math.max(...attempts.map(a => a.score)) : null;
+        const validScores = attempts.map(a => a.score).filter(score => score !== null && score !== undefined);
+        const bestScore = validScores.length > 0 ? Math.max(...validScores) : null;
         const totalAttempts = attempts.length;
         const lastAttempt = attempts[0] || null;
 
@@ -349,7 +354,7 @@ export const progressUtils = {
           attempts: totalAttempts,
           bestScore,
           lastAttempt,
-          isPassed: bestScore && bestScore >= quiz.passing_score,
+          isPassed: bestScore !== null && bestScore >= quiz.passing_score,
           allAttempts: attempts
         };
       });
