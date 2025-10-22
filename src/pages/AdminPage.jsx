@@ -241,14 +241,14 @@ const AdminPage = () => {
 
   const filteredParents = parents.filter(parent => {
     const name = `${parent.first_name || parent.firstname || ''} ${parent.last_name || parent.lastname || ''}`.toLowerCase();
-    const email = (parent.emailaddress || parent.username || parent.email || '').toLowerCase();
+  const email = (parent.email || parent.emailaddress || parent.username || '').toLowerCase();
     return name.includes(searchTerm.toLowerCase()) || email.includes(searchTerm.toLowerCase());
   });
 
   const filteredTeachers = teachers.filter(teacher =>
     (() => {
       const name = `${teacher.first_name || teacher.firstname || ''} ${teacher.last_name || teacher.lastname || ''}`.toLowerCase();
-      const email = (teacher.emailaddress || teacher.username || teacher.email || '').toLowerCase();
+  const email = (teacher.email || teacher.emailaddress || teacher.username || '').toLowerCase();
       return name.includes(searchTerm.toLowerCase()) || email.includes(searchTerm.toLowerCase());
     })()
   );
@@ -256,7 +256,7 @@ const AdminPage = () => {
   const filteredAdmins = admins.filter(admin =>
     (() => {
       const name = `${admin.first_name || admin.firstname || ''} ${admin.last_name || admin.lastname || ''}`.toLowerCase();
-      const email = (admin.emailaddress || admin.username || admin.email || '').toLowerCase();
+  const email = (admin.email || admin.emailaddress || admin.username || '').toLowerCase();
       return name.includes(searchTerm.toLowerCase()) || email.includes(searchTerm.toLowerCase());
     })()
   );
@@ -305,7 +305,8 @@ const AdminPage = () => {
         if (user && (user.role === 'teacher' || user.role === 'admin')) {
           initialFormData.firstname = user.first_name || '';
           initialFormData.lastname = user.last_name || '';
-          initialFormData.emailaddress = user.username ? `${user.username}@example.com` : '';
+          // Use the real email if available; otherwise fall back to username@example.com for display
+          initialFormData.emailaddress = user.email || (user.username ? `${user.username}@example.com` : '');
         }
 
 
