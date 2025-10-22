@@ -385,7 +385,8 @@ const ClassroomPage = () => {
             studentsQuery = studentsQuery.in('section_id', sectionIds);
           } else {
             // Teacher has no assigned sections - set query to return empty set
-            studentsQuery = studentsQuery.eq('id', ''); // no match
+            // Using limit(0) avoids sending an invalid empty UUID filter to the REST API
+            studentsQuery = studentsQuery.limit(0);
           }
         } catch (err) {
         }
