@@ -511,53 +511,108 @@ const handleFormSubmit = async (formData) => {
     // Create user in Supabase Auth (for all new user creation)
     let authData = null;
     if (modalAction.type === 'create') {
-      // Validate supabaseAdmin is available
-      if (!supabaseAdmin) {
-        showAlertMessage('danger', 'Admin operations not available. Please check environment configuration.');
-        return;
-      }
-
-      
-      // Create auth user with the admin client for immediate activation
-      const { data: authResponse, error: authError } = await supabaseAdmin.auth.admin.createUser({
-        email: formData.emailaddress,
-        password: formData.password,
-        // Do not auto-confirm the email so the parent receives a verification/reset email
-        email_confirm: false,
-        user_metadata: { role: activeTab.slice(0, -1) }
-      });
-
-
-      if (authError) {
-        // Provide more helpful error messages for common cases
-        const msg = authError.message || String(authError);
-        if (msg.includes('already registered') || msg.includes('duplicate')) {
-          showAlertMessage('danger', 'This email is already registered. Please use another email.');
+      // For admins use the admin client to create and auto-confirm the account (no verification email required)
+      if (activeTab === 'admins') {
+        if (!supabaseAdmin) {
+          showAlertMessage('danger', 'Admin operations not available. Please check environment configuration.');
           return;
         }
-        showAlertMessage('danger', 'Registration failed: ' + msg);
-        return;
+        const { data: adminCreateResp, error: adminCreateErr } = await supabaseAdmin.auth.admin.createUser({
+          email: formData.emailaddress,
+          password: formData.password,
+          email_confirm: true, // auto-confirm admin accounts so they don't need to verify by email
+          user_metadata: { role: 'admin', first_name: formData.firstname, last_name: formData.lastname }
+        });
+
+        console.log('supabaseAdmin.auth.admin.createUser response:', { adminCreateResp, adminCreateErr });
+        if (adminCreateErr) {
+          const msg = adminCreateErr.message || String(adminCreateErr);
+          if (msg.includes('already registered') || msg.includes('duplicate')) {
+            showAlertMessage('danger', 'This email is already registered. Please use another email.');
+            return;
+          }
+          showAlertMessage('danger', 'Registration failed: ' + msg);
+          return;
+        }
+
+        const createdUser = adminCreateResp?.user ?? adminCreateResp;
+        if (!createdUser || !createdUser.id) {
+          showAlertMessage('danger', 'Registration failed: No valid user id returned');
+          return;
+        }
+        authData = { user: createdUser };
+      } else if (activeTab === 'teachers') {
+        // For teachers use the regular signup flow which triggers a confirmation email
+        const { data: signUpResponse, error: signUpError } = await supabase.auth.signUp({
+          email: formData.emailaddress,
+          password: formData.password,
+          options: {
+            data: {
+              role: 'teacher',
+              first_name: formData.firstname,
+              last_name: formData.lastname
+            },
+            emailRedirectTo: `${window.location.origin}/login`
+          }
+        });
+
+        console.log('supabase.auth.signUp response:', { signUpResponse, signUpError });
+        if (signUpError) {
+          const msg = signUpError.message || String(signUpError);
+          if (msg.includes('already registered') || msg.includes('duplicate')) {
+            showAlertMessage('danger', 'This email is already registered. Please use another email.');
+            return;
+          }
+          showAlertMessage('danger', 'Registration failed: ' + msg);
+          return;
+        }
+
+        authData = signUpResponse;
+        console.log('authData set for new teacher:', authData);
+      } else {
+        // For students (parents), use admin client
+        if (!supabaseAdmin) {
+          showAlertMessage('danger', 'Admin operations not available. Please check environment configuration.');
+          return;
+        }
+
+        const { data: authResponse, error: authError } = await supabaseAdmin.auth.admin.createUser({
+          email: formData.emailaddress,
+          password: formData.password,
+          email_confirm: false,
+          user_metadata: { role: activeTab.slice(0, -1) }
+        });
+
+        if (authError) {
+          const msg = authError.message || String(authError);
+          if (msg.includes('already registered') || msg.includes('duplicate')) {
+            showAlertMessage('danger', 'This email is already registered. Please use another email.');
+            return;
+          }
+          showAlertMessage('danger', 'Registration failed: ' + msg);
+          return;
+        }
+
+        let createdUser = null;
+        if (!authResponse) {
+          showAlertMessage('danger', 'Registration failed: No user data returned');
+          return;
+        }
+        if (authResponse.user) createdUser = authResponse.user;
+        else createdUser = authResponse;
+
+        if (!createdUser || !createdUser.id) {
+          showAlertMessage('danger', 'Registration failed: No valid user id returned');
+          return;
+        }
+
+        authData = { user: createdUser };
       }
 
-      // The admin.createUser response shape can vary between SDK versions:
-      // - it may return { user: { id, ... } }
-      // - or return the user object directly
-      // Normalize the result so downstream code can use authData.user.id
-      let createdUser = null;
-      if (!authResponse) {
-        showAlertMessage('danger', 'Registration failed: No user data returned');
-        return;
-      }
-      if (authResponse.user) createdUser = authResponse.user;
-      else createdUser = authResponse;
-
-      if (!createdUser || !createdUser.id) {
+      if (!authData || !authData.user || !authData.user.id) {
         showAlertMessage('danger', 'Registration failed: No valid user id returned');
         return;
       }
-
-      // Set authData to match the older signUp shape (authData.user.id)
-      authData = { user: createdUser };
     }
 
     // If editing an existing user and a new password is provided, update the user's password in Supabase Auth
@@ -652,6 +707,11 @@ const handleFormSubmit = async (formData) => {
             throw new Error(`Failed to create ${activeTab.slice(0, -1)} profile: ${insertError.message || JSON.stringify(insertError)}`);
           }
         }
+
+        // Teachers: their signup via `supabase.auth.signUp()` will already trigger the confirmation email.
+        // Admins: created with the admin client and auto-confirmed; no email is required.
+        // No extra OTP email is sent here to avoid hitting Supabase rate limits.
+        showAlertMessage('success', `${activeTab.slice(0, -1)} created successfully.`);
       } catch (error) {
         // Clean up auth user on any unexpected error
         try { await supabaseAdmin.auth.admin.deleteUser(authData.user.id); } catch (cleanupErr) { console.error('Cleanup error:', cleanupErr); }
@@ -845,7 +905,7 @@ const handleFormSubmit = async (formData) => {
     }
 
     const successMessage = modalAction.type === 'create' 
-      ? `${activeTab.slice(0, -1)} created successfully! ${activeTab === 'students' ? 'Parent will receive email verification.' : 'Please check email to verify account. If you do not receive an email, contact support.'}`
+      ? `${activeTab.slice(0, -1)} created successfully! ${activeTab === 'students' ? 'Parent will receive email verification.' : 'Confirmation email sent! Please check your email to verify your account before logging in.'}`
       : `${activeTab.slice(0, -1)} updated successfully!`;
     
     showAlertMessage('success', successMessage);
