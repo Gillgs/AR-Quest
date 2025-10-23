@@ -492,22 +492,7 @@ const handleFormSubmit = async (formData) => {
       return;
     }
 
-    // Check if email already exists in Supabase Auth (for all new user creation)
-    if (modalAction.type === 'create') {
-      const { data: existingUser, error: lookupError } = await supabaseAdmin
-        .from('user_profiles')
-        .select('id')
-        .eq('username', formData.emailaddress.split('@')[0])
-        .maybeSingle();
-      if (lookupError) {
-        showAlertMessage('danger', 'Error checking for existing user: ' + lookupError.message);
-        return;
-      }
-      if (existingUser && existingUser.id) {
-        showAlertMessage('danger', 'This email is already registered. Please use another email.');
-        return;
-      }
-    }
+
 
     // Create user in Supabase Auth (for all new user creation)
     let authData = null;
@@ -616,8 +601,8 @@ const handleFormSubmit = async (formData) => {
       }
     }
 
-    // If editing an existing user and a new password is provided, update the user's password in Supabase Auth
-    if (modalAction.type !== 'create' && formData.password && formData.password.trim()) {
+    // If editing an existing user and a new password or email is provided, update the user's auth data in Supabase Auth
+    if (modalAction.type !== 'create' && ((formData.password && formData.password.trim()) || (formData.emailaddress && formData.emailaddress.trim()))) {
       try {
         // Verify this id maps to an auth-backed profile (not a student record)
         const { data: profileRecord, error: profileErr } = await supabaseAdmin
@@ -635,13 +620,20 @@ const handleFormSubmit = async (formData) => {
         } else {
           // For password updates on teachers/admins, we need to use the admin service role
           
-          // Use admin client to update user password
+          // Use admin client to update user password and/or email
+          const updateData = {
+            email_confirm: true // Skip email confirmation for admin updates  
+          };
+          if (formData.password) {
+            updateData.password = formData.password;
+          }
+          if (formData.emailaddress) {
+            updateData.email = formData.emailaddress;
+          }
+          
           const { data: updatedAuth, error: updateAuthError } = await supabaseAdmin.auth.admin.updateUserById(
             formData.id, 
-            { 
-              password: formData.password,
-              email_confirm: true // Skip email confirmation for admin updates
-            }
+            updateData
           );
           
           if (updateAuthError) {
@@ -906,7 +898,13 @@ const handleFormSubmit = async (formData) => {
     }
 
     const successMessage = modalAction.type === 'create' 
-      ? `${activeTab.slice(0, -1)} created successfully! ${activeTab === 'students' ? 'Parent can now login with their email and password.' : 'Confirmation email sent! Please check your email to verify your account before logging in.'}`
+      ? `${activeTab.slice(0, -1)} created successfully! ${
+          activeTab === 'students' 
+            ? 'Parent can now login with their email and password.' 
+            : activeTab === 'admins'  
+              ? 'Admin account is ready for immediate use.'
+              : 'Confirmation email sent! Please check your email to verify your account before logging in.'
+        }`
       : `${activeTab.slice(0, -1)} updated successfully!`;
     
     showAlertMessage('success', successMessage);
@@ -3598,8 +3596,8 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
         delete submissionData.parentmiddlename;
         delete submissionData.parentemailaddress;
       }
-        // Before submitting creation, ensure the email isn't already in use (prevent duplicate)
-        if (modalAction.type === 'create') {
+        // Before submitting, ensure the email isn't already in use (prevent duplicate)
+        if (modalAction.type === 'create' || modalAction.type === 'edit') {
           const emailVal = (submissionData.emailaddress || '').toString().trim().toLowerCase();
           if (emailVal) {
             try {
@@ -3614,7 +3612,9 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
                 .or(`username.eq.${encodedUsername},email.eq.${encodedEmail}`)
                 .maybeSingle();
               if (lookupErr) console.warn('Email lookup warning:', lookupErr);
-              if (existing && existing.id) {
+              // For edits, only show error if the existing user is different from current user
+              if (existing && existing.id && 
+                  (modalAction.type === 'create' || existing.id !== submissionData.id)) {
                 // Set inline field error so the Form.Control.Feedback shows below the input
                 setErrors(prev => ({ ...prev, emailaddress: 'This email is already in use' }));
                 return; // abort submission
@@ -3865,8 +3865,6 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
                       name="emailaddress"
                       value={formData.emailaddress !== undefined ? formData.emailaddress : ""}
                       onChange={handleInputChange}
-                      readOnly={!isCreating}
-                      disabled={!isCreating}
                       isInvalid={!!errors.emailaddress}
                       className="form-control-modern"
                       placeholder="Enter email address"
