@@ -472,7 +472,6 @@ const ProfilePage = () => {
         };
         if (formData.parentmiddlename?.trim()) parentUpdate.middle_name = formData.parentmiddlename.trim();
   if (formData.contactnumber?.trim()) parentUpdate.contact = formData.contactnumber.trim();
-        if (formData.emailaddress?.trim()) parentUpdate.email = formData.emailaddress.trim();
 
         const { error: parentError } = await supabase
           .from('user_profiles')
@@ -505,7 +504,6 @@ const ProfilePage = () => {
         };
         if (formData.middlename?.trim()) profileUpdate.middle_name = formData.middlename.trim();
   if (formData.contactnumber?.trim()) profileUpdate.contact = formData.contactnumber.trim();
-        if (formData.emailaddress?.trim()) profileUpdate.email = formData.emailaddress.trim();
 
         const { error: profileError } = await supabase
           .from('user_profiles')
@@ -1746,8 +1744,17 @@ const ProfilePage = () => {
                       <Form.Control
                         type="email"
                         value={formData.emailaddress}
-                        onChange={(e) => setFormData({ ...formData, emailaddress: e.target.value })}
-                        style={{ borderRadius: 12, padding: '8px 10px', fontSize: '0.95rem', border: '1px solid #d1d5db' }}
+                        readOnly
+                        disabled
+                        style={{ 
+                          borderRadius: 12, 
+                          padding: '8px 10px', 
+                          fontSize: '0.95rem', 
+                          border: '1px solid #d1d5db',
+                          backgroundColor: '#f8f9fa',
+                          color: '#6c757d',
+                          cursor: 'not-allowed'
+                        }}
                       />
                     </Form.Group>
                   </Col>
