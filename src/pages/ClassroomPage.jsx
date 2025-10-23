@@ -169,9 +169,48 @@ const ClassroomPage = () => {
   const [downloadType, setDownloadType] = useState("pdf");
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+  const [showSectionStudentsModal, setShowSectionStudentsModal] = useState(false);
+  const [selectedSectionData, setSelectedSectionData] = useState(null);
+  const [sectionStudents, setSectionStudents] = useState([]);
+  const [isCloseHover, setIsCloseHover] = useState(false);
   const pdfContentRef = useRef(null);
   const userRole = localStorage.getItem("userRole");
   const userId = localStorage.getItem("userId");
+
+  // Debug logging for authentication issues
+  useEffect(() => {
+    console.log('ClassroomPage - User Authentication Debug:');
+    console.log('userRole:', userRole);
+    console.log('userId:', userId);
+    console.log('supabaseAdmin available:', !!supabaseAdmin);
+    
+    // Also check if the user role is being set correctly in the database
+    const checkUserRole = async () => {
+      if (userId) {
+        try {
+          const { data: userProfile, error } = await supabase
+            .from('user_profiles')
+            .select('id, role, first_name, last_name')
+            .eq('id', userId)
+            .single();
+          
+          if (!error && userProfile) {
+            console.log('Database user profile:', userProfile);
+            if (userProfile.role !== userRole) {
+              console.warn('Role mismatch! localStorage:', userRole, 'Database:', userProfile.role);
+            }
+          } else {
+            console.error('Error fetching user profile:', error);
+          }
+        } catch (err) {
+          console.error('Error in checkUserRole:', err);
+        }
+      }
+    };
+    
+    checkUserRole();
+  }, [userRole, userId]);
+
   const subjects = [
     'Language',
     'Mathematics',
@@ -357,53 +396,68 @@ const ClassroomPage = () => {
 
   const fetchData = async () => {
     try {
+      // Choose the appropriate client based on user role
+      // Use admin client for teachers and admins to bypass RLS policies
+      const client = (userRole === 'teacher' || userRole === 'admin') && supabaseAdmin ? supabaseAdmin : supabase;
+      console.log('Using client type:', client === supabaseAdmin ? 'admin' : 'regular', 'for userRole:', userRole);
+      
       // Fetch sections with teacher info
-      const { data: sectionsData, error: sectionsError } = await supabase
+      const { data: sectionsData, error: sectionsError } = await client
         .from('sections')
         .select(`id, name, time_period, classroom_number, teacher_id, max_students, school_year, is_active, created_at, user_profiles(id, first_name, last_name, profile_picture_url)`) // join teacher info
         .order('name', { ascending: true });
       if (sectionsError) throw sectionsError;
 
       // First, fetch ALL students to get accurate section counts (regardless of user role)
-      const { data: allStudentsData, error: allStudentsError } = await supabase
+      // This ensures even unassigned teachers and admins see correct student counts
+      const { data: allStudentsData, error: allStudentsError } = await client
         .from('students')
-        .select('id, section_id')
+        .select('id, section_id, is_active')
         .eq('is_active', true);
       if (allStudentsError) throw allStudentsError;
 
       // Then fetch students with full details for display
-      // If the current user is a teacher, only fetch students in sections assigned to them
-      let studentsQuery = supabase
+      // For admin users and teachers, fetch ALL students so they can see accurate counts and section details
+      // Only filter for regular parent/student users
+      let studentsQuery = client
         .from('students')
         .select(`id, parent_id, section_id, first_name, last_name, date_of_birth, student_id, profile_picture_url, enrollment_date, is_active, created_at, user_profiles:parent_id(id, first_name, last_name, profile_picture_url, email, contact), section:sections(id, name)`) // join parent and section with correct alias
+        .eq('is_active', true)
         .order('last_name', { ascending: true })
         .order('first_name', { ascending: true });
 
-      if (userRole === 'teacher') {
+      // Only filter students for regular users (parents/students), not for teachers/admins
+      if (userRole === 'parent' || userRole === 'student') {
         try {
-          // Find all sections assigned to this teacher
-          const { data: teacherSections, error: teacherSectionsErr } = await supabase
-            .from('sections')
-            .select('id')
-            .eq('teacher_id', userId);
-          if (teacherSectionsErr) throw teacherSectionsErr;
-          const sectionIds = (teacherSections || []).map(s => s.id).filter(Boolean);
-          if (sectionIds.length > 0) {
-            studentsQuery = studentsQuery.in('section_id', sectionIds);
+          // For parents, only show their own children
+          // For students, only show students in their section
+          if (userRole === 'parent') {
+            studentsQuery = studentsQuery.eq('parent_id', userId);
           } else {
-            // Teacher has no assigned sections - set query to return empty set
-            // Using limit(0) avoids sending an invalid empty UUID filter to the REST API
-            studentsQuery = studentsQuery.limit(0);
+            // Student role - find their section and show only students in same section
+            const { data: currentStudentData } = await client
+              .from('students')
+              .select('section_id')
+              .eq('parent_id', userId)
+              .single();
+            
+            if (currentStudentData?.section_id) {
+              studentsQuery = studentsQuery.eq('section_id', currentStudentData.section_id);
+            } else {
+              studentsQuery = studentsQuery.limit(0);
+            }
           }
         } catch (err) {
+          console.error('Error filtering students for user role:', err);
         }
       }
+      // For admin and teacher roles, we fetch ALL students (no additional filtering)
 
       const { data: studentsData, error: studentsError } = await studentsQuery;
       if (studentsError) throw studentsError;
 
       // Fetch teachers from user_profiles
-      const { data: teachersData, error: teachersError } = await supabase
+      const { data: teachersData, error: teachersError } = await client
         .from('user_profiles')
         .select('id, role, username, first_name, last_name, profile_picture_url, is_active, created_at')
         .eq('role', 'teacher')
@@ -630,7 +684,7 @@ const ClassroomPage = () => {
         if (userRole === "admin" || userRole === "teacher") {
           matchesSection = selectedSection === 'all' || 
             (selectedSection === 'unassigned' && !student.section_id) ||
-            (student.sections?.name === selectedSection);
+            (student.section?.name === selectedSection);
         } else {
           // Students only see their own section
           if (currentUser?.section_id) {
@@ -684,6 +738,38 @@ const ClassroomPage = () => {
   }, [sections, searchTerm]);
 
   const canManageSections = userRole === "admin" || userRole === "teacher";
+
+  // Handle section click to show students
+  const handleSectionClick = async (section) => {
+    try {
+      // Use admin client for teachers and admins to bypass RLS
+      const client = (userRole === 'teacher' || userRole === 'admin') && supabaseAdmin ? supabaseAdmin : supabase;
+      
+      // Fetch students in this section
+      const { data: studentsData, error } = await client
+        .from('students')
+        .select(`
+          id, parent_id, section_id, first_name, last_name, date_of_birth, 
+          student_id, profile_picture_url, enrollment_date, is_active, created_at,
+          user_profiles:parent_id(id, first_name, last_name, profile_picture_url, email, contact)
+        `)
+        .eq('section_id', section.id)
+        .eq('is_active', true)
+        .order('last_name', { ascending: true })
+        .order('first_name', { ascending: true });
+      
+      if (error) throw error;
+      
+      setSelectedSectionData(section);
+      setSectionStudents(studentsData || []);
+      setShowSectionStudentsModal(true);
+    } catch (error) {
+      console.error('Error fetching section students:', error);
+      setClassToastType('danger');
+      setClassToastMessage('Failed to load section students');
+      setShowClassToast(true);
+    }
+  };
   
   // Bulk selection handlers
   const handleSelectStudent = (studentId, isChecked) => {
@@ -1690,7 +1776,20 @@ const ClassroomPage = () => {
                       </thead>
                       <tbody>
                         {filteredSections.map((section) => (
-                          <tr key={section.id}>
+                          <tr 
+                            key={section.id}
+                            onClick={() => handleSectionClick(section)}
+                            style={{ 
+                              cursor: 'pointer',
+                              transition: 'background-color 0.2s ease'
+                            }}
+                            onMouseEnter={(e) => {
+                              e.target.closest('tr').style.backgroundColor = '#f8f9fa';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.target.closest('tr').style.backgroundColor = '';
+                            }}
+                          >
                             <td>
                               <div className="fw-bold">{section.name || 'Unnamed Section'}</div>
                               <small className="text-muted">{section.school_year}</small>
@@ -2327,6 +2426,155 @@ const ClassroomPage = () => {
         onSubmit={handleSectionAction}
       />
     </div>
+
+    {/* Section Students Modal */}
+    <Modal 
+      show={showSectionStudentsModal} 
+      onHide={() => setShowSectionStudentsModal(false)} 
+      size="lg" 
+      centered
+    >
+      <Modal.Header closeButton style={{ 
+        background: 'linear-gradient(135deg, #4285F4 0%, #34A853 100%)',
+        color: 'white',
+        borderRadius: '12px 12px 0 0',
+        border: 'none'
+      }}>
+        <Modal.Title style={{ 
+          fontWeight: 'bold',
+          fontSize: '1.5rem',
+          textShadow: '0 2px 4px rgba(0,0,0,0.2)'
+        }}>
+          <FiUsers className="me-2" />
+          {selectedSectionData?.name || 'Section'} Students
+        </Modal.Title>
+      </Modal.Header>
+      
+      <Modal.Body style={{ 
+        background: 'linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%)',
+        padding: '2rem',
+        maxHeight: '60vh',
+        overflowY: 'auto'
+      }}>
+        <div className="mb-3">
+          <h6 style={{ color: kidStyles.colors.primary, fontWeight: 'bold' }}>
+            Total Students: {sectionStudents.length}
+          </h6>
+        </div>
+        
+        {sectionStudents.length > 0 ? (
+          <div style={{ display: 'grid', gap: '1rem' }}>
+            {sectionStudents.map((student, index) => (
+              <div 
+                key={student.id} 
+                style={{
+                  ...kidStyles.card,
+                  padding: '1rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '1rem',
+                  border: '2px solid #e0e6ff',
+                  background: 'white'
+                }}
+              >
+                <div style={{
+                  width: '50px',
+                  height: '50px',
+                  borderRadius: '50%',
+                  background: `linear-gradient(135deg, ${kidStyles.colors.primary} 0%, ${kidStyles.colors.secondary} 100%)`,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: 'white',
+                  fontWeight: 'bold',
+                  fontSize: '1.2rem'
+                }}>
+                  {student.first_name?.charAt(0)}{student.last_name?.charAt(0)}
+                </div>
+                
+                <div style={{ flex: 1 }}>
+                  <h6 style={{ 
+                    margin: 0, 
+                    color: kidStyles.colors.text,
+                    fontWeight: 'bold'
+                  }}>
+                    {student.first_name} {student.last_name}
+                  </h6>
+                  <small style={{ color: '#6c757d' }}>
+                    Student ID: {student.student_id || 'Not assigned'}
+                  </small>
+                  {student.user_profiles && (
+                    <div style={{ marginTop: '0.25rem' }}>
+                      <small style={{ color: '#6c757d' }}>
+                        Parent: {student.user_profiles.first_name} {student.user_profiles.last_name}
+                      </small>
+                    </div>
+                  )}
+                </div>
+                
+                <div style={{ 
+                  background: kidStyles.colors.accent1,
+                  color: 'white',
+                  padding: '0.25rem 0.75rem',
+                  borderRadius: '15px',
+                  fontSize: '0.8rem',
+                  fontWeight: 'bold'
+                }}>
+                  #{index + 1}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{
+            textAlign: 'center',
+            padding: '3rem',
+            color: '#6c757d'
+          }}>
+            <FiUsers size={64} style={{ opacity: 0.3, marginBottom: '1rem' }} />
+            <h6>No students in this section</h6>
+            <p>This section doesn't have any students assigned yet.</p>
+          </div>
+        )}
+      </Modal.Body>
+      
+      <Modal.Footer style={{
+        background: '#f8f9fa',
+        borderTop: '1px solid #dee2e6',
+        borderRadius: '0 0 12px 12px',
+        position: 'relative',
+        minHeight: '72px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
+        {/* Centered Floating Close Button */}
+        <div style={{ width: '100%', display: 'flex', justifyContent: 'center' }}>
+          <Button
+            className="section-modal-close-btn"
+            onClick={() => setShowSectionStudentsModal(false)}
+            onMouseEnter={() => setIsCloseHover(true)}
+            onMouseLeave={() => setIsCloseHover(false)}
+            onFocus={() => setIsCloseHover(true)}
+            onBlur={() => setIsCloseHover(false)}
+            style={{
+              ...kidStyles.button,
+              background: isCloseHover ? '#dc3545' : 'white',
+              borderColor: '#dc3545',
+              color: isCloseHover ? 'white' : '#dc3545',
+              padding: '10px 24px',
+              borderRadius: '28px',
+              boxShadow: isCloseHover ? '0 8px 20px rgba(220, 53, 69, 0.16)' : '0 6px 18px rgba(0,0,0,0.06)',
+              fontWeight: 700,
+              letterSpacing: '0.5px',
+              transition: 'all 160ms ease-in-out'
+            }}
+          >
+            Close
+          </Button>
+        </div>
+      </Modal.Footer>
+    </Modal>
     </>
   );
 };
@@ -2714,6 +2962,22 @@ styles.innerHTML = `
     font-weight: 600;
     border-bottom: 2px solid #4285F4;
     background-color: rgba(66, 133, 244, 0.08);
+  }
+
+  /* Section Students Modal Close Button Styling */
+  .section-modal-close-btn {
+    background: #ffffff !important; /* white background */
+    color: #dc3545 !important; /* red text */
+    border: 2px solid #dc3545 !important; /* red border */
+    transition: all 0.18s ease-in-out;
+  }
+
+  .section-modal-close-btn:hover,
+  .section-modal-close-btn:focus {
+    background: #dc3545 !important; /* red background on hover */
+    color: #ffffff !important; /* white text on hover */
+    box-shadow: 0 8px 20px rgba(220, 53, 69, 0.16);
+    border-color: #b21f2d !important;
   }
   /* Kid-friendly animations */
   @keyframes bounce {
