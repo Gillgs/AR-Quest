@@ -580,7 +580,7 @@ const handleFormSubmit = async (formData) => {
         const { data: authResponse, error: authError } = await supabaseAdmin.auth.admin.createUser({
           email: formData.emailaddress,
           password: formData.password,
-          email_confirm: false,
+          email_confirm: true,
           user_metadata: { role: activeTab.slice(0, -1) }
         });
 
@@ -788,20 +788,20 @@ const handleFormSubmit = async (formData) => {
             .from('user_profiles')
             .insert([parentProfile]);
           if (parentError) throw new Error('Failed to create parent profile: ' + parentError.message);
-              // After creating the parent profile, send a password reset / invite email so the parent can set their password and verify their account.
+              // Send a welcome email with login instructions to the parent
               try {
-                // Use the anon client to send a magic-link (OTP) sign-in email so the parent can log in directly
+                // Send a magic-link email as a welcome message (optional - parents can also login with password)
                 const { data: otpData, error: otpErr } = await supabase.auth.signInWithOtp({
                   email: formData.emailaddress,
                   options: { emailRedirectTo: `${window.location.origin}/login` }
                 });
                 if (otpErr) {
-                  showAlertMessage('warning', 'Parent created but login email could not be sent automatically.');
+                  showAlertMessage('success', 'Parent account created successfully. They can now login with their email and password.');
                 } else {
-                  showAlertMessage('success', 'Parent created and login link sent to their email.');
+                  showAlertMessage('success', 'Parent account created successfully. A welcome email with login link has been sent.');
                 }
               } catch (e) {
-                showAlertMessage('warning', 'Parent created but failed to send login email (see console).');
+                showAlertMessage('success', 'Parent account created successfully. They can now login with their email and password.');
               }
         }
 
@@ -906,7 +906,7 @@ const handleFormSubmit = async (formData) => {
     }
 
     const successMessage = modalAction.type === 'create' 
-      ? `${activeTab.slice(0, -1)} created successfully! ${activeTab === 'students' ? 'Parent will receive email verification.' : 'Confirmation email sent! Please check your email to verify your account before logging in.'}`
+      ? `${activeTab.slice(0, -1)} created successfully! ${activeTab === 'students' ? 'Parent can now login with their email and password.' : 'Confirmation email sent! Please check your email to verify your account before logging in.'}`
       : `${activeTab.slice(0, -1)} updated successfully!`;
     
     showAlertMessage('success', successMessage);
