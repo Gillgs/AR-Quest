@@ -364,7 +364,14 @@ const ClassroomPage = () => {
         .order('name', { ascending: true });
       if (sectionsError) throw sectionsError;
 
-      // Fetch students with parent info and section info
+      // First, fetch ALL students to get accurate section counts (regardless of user role)
+      const { data: allStudentsData, error: allStudentsError } = await supabase
+        .from('students')
+        .select('id, section_id')
+        .eq('is_active', true);
+      if (allStudentsError) throw allStudentsError;
+
+      // Then fetch students with full details for display
       // If the current user is a teacher, only fetch students in sections assigned to them
       let studentsQuery = supabase
         .from('students')
@@ -404,9 +411,9 @@ const ClassroomPage = () => {
         .order('first_name', { ascending: true });
       if (teachersError) throw teachersError;
 
-      // Count students per section
+      // Count students per section using ALL students (not filtered by teacher role)
       const sectionCounts = {};
-      (studentsData || []).forEach(student => {
+      (allStudentsData || []).forEach(student => {
         if (student.section_id) {
           sectionCounts[student.section_id] = (sectionCounts[student.section_id] || 0) + 1;
         }
