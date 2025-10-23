@@ -18,6 +18,8 @@ const ProgressDetails = ({
   const [quizzesProgress, setQuizzesProgress] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudentForTeacher, setSelectedStudentForTeacher] = useState(null);
+  const [showQuizAttemptsModal, setShowQuizAttemptsModal] = useState(false);
+  const [selectedQuizAttempts, setSelectedQuizAttempts] = useState(null);
 
   useEffect(() => {
     if (moduleId) {
@@ -91,6 +93,18 @@ const ProgressDetails = ({
     if (score >= 90) return '#10b981'; // green
     if (score >= passingScore) return '#f59e0b'; // yellow
     return '#ef4444'; // red
+  };
+
+  const handleQuizClick = (quiz) => {
+    if (quiz.attempts > 0 && quiz.allAttempts && quiz.allAttempts.length > 0) {
+      setSelectedQuizAttempts({
+        title: quiz.title,
+        totalQuestions: quiz.total_questions,
+        passingScore: quiz.passing_score,
+        attempts: quiz.allAttempts.sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at))
+      });
+      setShowQuizAttemptsModal(true);
+    }
   };
 
   if (loading) {
@@ -453,13 +467,32 @@ const ProgressDetails = ({
             {quizzesProgress.map(quiz => (
               <div 
                 key={quiz.id}
+                onClick={() => handleQuizClick(quiz)}
                 style={{
                   padding: spacing.sm,
                   background: quiz.isPassed ? '#f0fdf4' : 
                             quiz.attempts > 0 ? '#fef3c7' : '#ffffff',
                   borderRadius: borderRadius.sm,
                   border: `1px solid ${quiz.isPassed ? '#16a34a' : 
-                                      quiz.attempts > 0 ? '#f59e0b' : colors.borderColor}`
+                                      quiz.attempts > 0 ? '#f59e0b' : colors.borderColor}`,
+                  cursor: quiz.attempts > 0 ? 'pointer' : 'default',
+                  transition: 'all 0.2s ease',
+                  ':hover': quiz.attempts > 0 ? {
+                    transform: 'translateY(-1px)',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                  } : {}
+                }}
+                onMouseEnter={(e) => {
+                  if (quiz.attempts > 0) {
+                    e.target.style.transform = 'translateY(-1px)';
+                    e.target.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (quiz.attempts > 0) {
+                    e.target.style.transform = 'translateY(0px)';
+                    e.target.style.boxShadow = 'none';
+                  }
                 }}
               >
                 <div style={{ 
@@ -489,6 +522,15 @@ const ProgressDetails = ({
                         color: colors.mutedText 
                       }}>
                         {quiz.total_questions} questions • Pass: {quiz.passing_score}%
+                        {quiz.attempts > 0 && (
+                          <span style={{ 
+                            fontSize: '0.7rem', 
+                            color: colors.primary || '#3b82f6',
+                            marginLeft: spacing.xs
+                          }}>
+                            • Click to view attempts
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -553,6 +595,158 @@ const ProgressDetails = ({
           fontSize: '0.9rem'
         }}>
           No lessons or quizzes found for this module.
+        </div>
+      )}
+
+      {/* Quiz Attempts Modal */}
+      {showQuizAttemptsModal && selectedQuizAttempts && (
+        <div 
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: spacing.md
+          }}
+          onClick={() => setShowQuizAttemptsModal(false)}
+        >
+          <div 
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: borderRadius.lg,
+              padding: spacing.lg,
+              minWidth: '500px',
+              maxWidth: '750px',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.3)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              marginBottom: spacing.lg,
+              paddingBottom: spacing.md,
+              borderBottom: `1px solid ${colors.borderColor}`
+            }}>
+              <div>
+                <h3 style={{ 
+                  margin: 0, 
+                  color: colors.textColor,
+                  fontSize: '1.25rem',
+                  fontWeight: 700
+                }}>
+                  {selectedQuizAttempts.title}
+                </h3>
+                <p style={{ 
+                  margin: 0, 
+                  marginTop: spacing.xs,
+                  color: colors.mutedText,
+                  fontSize: '0.9rem'
+                }}>
+                  {selectedQuizAttempts.totalQuestions} questions • Pass: {selectedQuizAttempts.passingScore}%
+                </p>
+              </div>
+              <button
+                onClick={() => setShowQuizAttemptsModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '1.5rem',
+                  cursor: 'pointer',
+                  color: colors.mutedText,
+                  padding: spacing.xs,
+                  borderRadius: borderRadius.sm
+                }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Attempts List */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: spacing.sm }}>
+              <h4 style={{ 
+                margin: 0, 
+                marginBottom: spacing.sm,
+                color: colors.textColor,
+                fontSize: '1rem',
+                fontWeight: 600
+              }}>
+                All Attempts ({selectedQuizAttempts.attempts.length})
+              </h4>
+
+              {selectedQuizAttempts.attempts.map((attempt, index) => (
+                <div 
+                  key={attempt.id || index}
+                  style={{
+                    padding: spacing.md,
+                    background: attempt.score >= selectedQuizAttempts.passingScore ? '#f0fdf4' : '#fef2f2',
+                    border: `1px solid ${attempt.score >= selectedQuizAttempts.passingScore ? '#16a34a' : '#ef4444'}`,
+                    borderRadius: borderRadius.md,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center'
+                  }}
+                >
+                  <div>
+                    <div style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: spacing.sm,
+                      marginBottom: spacing.xs
+                    }}>
+                      {attempt.score >= selectedQuizAttempts.passingScore ? (
+                        <CheckCircle size={18} color="#16a34a" />
+                      ) : (
+                        <XCircle size={18} color="#ef4444" />
+                      )}
+                      <span style={{ 
+                        fontWeight: 600, 
+                        color: colors.textColor,
+                        fontSize: '0.9rem'
+                      }}>
+                        Attempt #{selectedQuizAttempts.attempts.length - index}
+                      </span>
+                    </div>
+                    <div style={{ 
+                      fontSize: '0.8rem', 
+                      color: colors.mutedText 
+                    }}>
+                      {formatDate(attempt.completed_at)} 
+                      {attempt.time_taken && (
+                        <span> • Time: {Math.round(attempt.time_taken / 60)}min</span>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ 
+                      fontSize: '1.1rem', 
+                      fontWeight: 700,
+                      color: getScoreColor(attempt.score, selectedQuizAttempts.passingScore)
+                    }}>
+                      {attempt.score}%
+                    </div>
+                    <div style={{ 
+                      fontSize: '0.8rem',
+                      color: colors.mutedText
+                    }}>
+                      {attempt.correct_answers || 0}/{selectedQuizAttempts.totalQuestions}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
