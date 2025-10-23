@@ -13,7 +13,6 @@ import {
   Alert,
   Modal,
   Nav,
-  Pagination,
   Spinner
 } from "react-bootstrap";
 import {
@@ -71,12 +70,14 @@ const AdminPage = () => {
     fetchParentCount();
   }, []);
   // State management
-  const [activeTab, setActiveTab] = useState('students');
+  const [activeTab, setActiveTab] = useState('parents');
   const [parents, setParents] = useState([]);
   const [students, setStudents] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [admins, setAdmins] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  // Separate search term for children list so we can have a second search box
+  const [childSearchTerm, setChildSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [modalAction, setModalAction] = useState({ type: '', data: null });
@@ -101,9 +102,7 @@ const AdminPage = () => {
     const id = setTimeout(() => setShowAdminToast(false), 3000);
     return () => clearTimeout(id);
   }, [showAdminToast]);
-  // Pagination states
-  const [currentPage, setCurrentPage] = useState(1);
-  const [usersPerPage] = useState(6); // Number of users per page
+
   // Refresh key for forcing UI update
   const [refreshKey, setRefreshKey] = useState(0);
   const [showAddChildModal, setShowAddChildModal] = useState(false);
@@ -145,10 +144,6 @@ const AdminPage = () => {
     return true;
   };
   // preview removed per redesign
-  // Reset current page when switching tabs to ensure consistency
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [activeTab]);
 
   // Clear selected parent when switching tabs so the children list auto-hides
   useEffect(() => {
@@ -234,8 +229,12 @@ const AdminPage = () => {
 
   // Filter functions
   const filteredStudents = students.filter(student => {
-    const matchesSearch = `${student.first_name || student.firstname || ''} ${student.last_name || student.lastname || ''}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (student.emailaddress || '').toLowerCase().includes(searchTerm.toLowerCase());
+    const activeSearch = activeTab === 'children' ? childSearchTerm : searchTerm;
+    const fullName = `${student.first_name || student.firstname || ''} ${student.middle_name || student.middlename || ''} ${student.last_name || student.lastname || ''}`.toLowerCase();
+    const parentName = `${student.parent_first_name || ''} ${student.parent_middle_name || ''} ${student.parent_last_name || ''}`.toLowerCase();
+    const email = (student.email || student.emailaddress || student.username || '').toLowerCase();
+    const studentId = String(student.student_id || '').toLowerCase();
+    const matchesSearch = fullName.includes(activeSearch.toLowerCase()) || parentName.includes(activeSearch.toLowerCase()) || email.includes(activeSearch.toLowerCase()) || studentId.includes(activeSearch.toLowerCase());
     return matchesSearch;
   });
 
@@ -261,12 +260,7 @@ const AdminPage = () => {
     })()
   );
 
-  // Pagination logic
-  const paginateUsers = (users) => {
-    const indexOfLastUser = currentPage * usersPerPage;
-    const indexOfFirstUser = indexOfLastUser - usersPerPage;
-    return users.slice(indexOfFirstUser, indexOfLastUser);
-  };
+
 
   const handleShowModal = async (type, user = null) => {
     if (type === 'delete') {
@@ -347,6 +341,22 @@ const AdminPage = () => {
     // Auto-hide after 3 seconds
     setTimeout(() => setShowAdminToast(false), 3000);
   };
+
+  // Handler for adding a child to a specific parent
+  const handleAddChildToParent = (parent) => {
+    setShowAddChildModal(true);
+    setChildForm({
+      firstname: '',
+      middlename: '',
+      lastname: '',
+      date_of_birth: '',
+      enrollment_date: todayStr,
+      student_id: '',
+      parentId: parent.id,
+      parentName: `${parent.first_name} ${parent.last_name}`
+    });
+  };
+
   // Validate form data
   const validateFormData = (formData) => {
     const errors = {};
@@ -366,8 +376,8 @@ const AdminPage = () => {
       errors.password = 'Password is required';
     }
 
-    // Validate parent information for students
-    if (activeTab === 'students') {
+    // Validate parent information for children
+    if (activeTab === 'children') {
       if (!formData.parentfirstname?.trim()) errors.parentfirstname = 'Parent first name is required';
       if (!formData.parentlastname?.trim()) errors.parentlastname = 'Parent last name is required';
     }
@@ -482,8 +492,8 @@ const handleFormSubmit = async (formData) => {
       }
       
     }
-    // Parent names required only when creating a student or adding a child to an existing parent
-    if (activeTab === 'students' && (modalAction.type === 'create' || formData.isAddingChild)) {
+    // Parent names required only when creating a child or adding a child to an existing parent
+    if (activeTab === 'children' && (modalAction.type === 'create' || formData.isAddingChild)) {
       if (!formData.parentfirstname?.trim()) errors.parentfirstname = 'Parent first name is required';
       if (!formData.parentlastname?.trim()) errors.parentlastname = 'Parent last name is required';
     }
@@ -742,7 +752,7 @@ const handleFormSubmit = async (formData) => {
 
       }
 
-    } else if (activeTab === 'students') {
+    } else if (activeTab === 'children') {
       if (modalAction.type === 'create') {
         // Creating new student - create parent with auth account first
         let parentId;
@@ -898,8 +908,8 @@ const handleFormSubmit = async (formData) => {
     }
 
     const successMessage = modalAction.type === 'create' 
-      ? `${activeTab.slice(0, -1)} created successfully! ${
-          activeTab === 'students' 
+      ? `${activeTab === 'children' ? 'Child' : activeTab.slice(0, -1)} created successfully! ${
+          activeTab === 'children' 
             ? 'Parent can now login with their email and password.' 
             : activeTab === 'admins'  
               ? 'Admin account is ready for immediate use.'
@@ -995,7 +1005,7 @@ const handleFormSubmit = async (formData) => {
       // Create student record
       const studentData = {
         id: crypto.randomUUID(),
-        parent_id: selectedUser.id,
+        parent_id: childForm.parentId || (selectedUser?.id),
         first_name: String(dataObj.firstname).trim(),
         middle_name: dataObj.middlename?.trim() || null,
         last_name: String(dataObj.lastname).trim(),
@@ -1104,12 +1114,12 @@ const handleFormSubmit = async (formData) => {
       let isStudent = false;
       
       // Determine if this is a student (child) deletion
-      if (user.role === 'student' || (activeTab === 'students' && !user.role)) {
+      if (user.role === 'student' || (activeTab === 'children' && !user.role)) {
         tableToUse = 'students';
         idField = 'id';
         isStudent = true;
-      } else if (activeTab === 'students' && user.role === 'parent') {
-        // If deleting a parent from the student list, ensure correct table
+      } else if (activeTab === 'children' && user.role === 'parent') {
+        // If deleting a parent from the children list, ensure correct table
         tableToUse = 'user_profiles';
         idField = 'id';
       }
@@ -1308,15 +1318,50 @@ const handleFormSubmit = async (formData) => {
       return;
     }
     try {
-      // Fetch profiles for the selected ids
-      const { data: rows, error } = await supabaseAdmin
-        .from('user_profiles')
-        .select('id, username, first_name, middle_name, last_name, email, contact, role, created_at')
-        .in('id', ids);
-      if (error) throw error;
+      let rows = [];
+      let headers = [];
+      let filename = `export_${activeTab}_${new Date().toISOString().slice(0,10)}.csv`;
+
+      if (activeTab === 'children') {
+        // For children, get data from students table with parent information
+        const selectedStudents = students.filter(student => ids.includes(student.id));
+        rows = selectedStudents;
+        headers = ['student_id', 'first_name', 'middle_name', 'last_name', 'parent_name', 'date_of_birth', 'enrollment_date', 'parent_email', 'parent_contact'];
+        
+        // Transform data for CSV
+        rows = selectedStudents.map(student => ({
+          student_id: student.student_id || '',
+          first_name: student.first_name || '',
+          middle_name: student.middle_name || student.middlename || '',
+          last_name: student.last_name || '',
+          parent_name: `${student.parent_first_name || ''} ${student.parent_middle_name || ''} ${student.parent_last_name || ''}`.trim() || 'Not assigned',
+          date_of_birth: student.date_of_birth || '',
+          enrollment_date: student.enrollment_date || '',
+          parent_email: student.parent_email || '',
+          parent_contact: student.parent_contact || ''
+        }));
+      } else {
+        // For parents, teachers, admins - get from user_profiles
+        const { data: profileData, error } = await supabaseAdmin
+          .from('user_profiles')
+          .select('id, username, first_name, middle_name, last_name, email, contact, role, created_at')
+          .in('id', ids);
+        if (error) throw error;
+        
+        rows = profileData || [];
+        headers = ['id', 'username', 'first_name', 'middle_name', 'last_name', 'email', 'contact', 'role', 'created_at'];
+        
+        // Add children count for parents
+        if (activeTab === 'parents') {
+          headers.push('children_count');
+          rows = rows.map(parent => {
+            const childrenCount = students.filter(student => student.parent_id === parent.id).length;
+            return { ...parent, children_count: childrenCount };
+          });
+        }
+      }
 
       // Build CSV
-      const headers = ['id', 'username', 'first_name', 'middle_name', 'last_name', 'email', 'contact', 'role', 'created_at'];
       const csvLines = [headers.join(',')];
       for (const r of rows) {
         const line = headers.map(h => {
@@ -1331,7 +1376,7 @@ const handleFormSubmit = async (formData) => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `export_${activeTab}_${new Date().toISOString().slice(0,10)}.csv`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -1350,14 +1395,39 @@ const handleFormSubmit = async (formData) => {
       return;
     }
     try {
-      const { data: rows, error } = await supabaseAdmin
-        .from('user_profiles')
-        .select('id, username, first_name, middle_name, last_name, email, contact, role, created_at')
-        .in('id', ids);
-      if (error) throw error;
+      let rows = [];
+      let sectionName = activeTab.charAt(0).toUpperCase() + activeTab.slice(1);
+
+      if (activeTab === 'children') {
+        // For children, get data from students
+        const selectedStudents = students.filter(student => ids.includes(student.id));
+        rows = selectedStudents.map(student => ({
+          id: student.id,
+          student_id: student.student_id || '',
+          name: `${student.first_name || ''} ${student.middle_name || student.middlename || ''} ${student.last_name || ''}`.trim(),
+          parent_name: `${student.parent_first_name || ''} ${student.parent_middle_name || ''} ${student.parent_last_name || ''}`.trim() || 'Not assigned',
+          date_of_birth: student.date_of_birth || '',
+          enrollment_date: student.enrollment_date || '',
+          parent_email: student.parent_email || '',
+          parent_contact: student.parent_contact || '',
+          role: 'Student'
+        }));
+      } else {
+        // For parents, teachers, admins - get from user_profiles
+        const { data: profileData, error } = await supabaseAdmin
+          .from('user_profiles')
+          .select('id, username, first_name, middle_name, last_name, email, contact, role, created_at')
+          .in('id', ids);
+        if (error) throw error;
+        
+        rows = (profileData || []).map(user => ({
+          ...user,
+          name: `${user.first_name || ''} ${user.middle_name || ''} ${user.last_name || ''}`.trim(),
+          children_count: activeTab === 'parents' ? students.filter(student => student.parent_id === user.id).length : null
+        }));
+      }
 
       // Professional PDF export with enhanced styling and branding
-      const sectionName = 'Selected_Users';
       const container = document.createElement('div');
       container.style.padding = '15px';
       container.style.fontFamily = '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif';
@@ -1411,11 +1481,11 @@ const handleFormSubmit = async (formData) => {
       reportInfo.style.textAlign = 'right';
 
       const reportTitle = document.createElement('h2');
-      reportTitle.textContent = 'USER EXPORT REPORT';
+      reportTitle.textContent = `${sectionName.toUpperCase()} EXPORT REPORT`;
       reportTitle.style.margin = '0';
       reportTitle.style.fontSize = '16px';
       reportTitle.style.fontWeight = 'bold';
-      reportTitle.style.color = '#34495e';
+      reportTitle.style.color = '#495057';
 
       const dateInfo = document.createElement('div');
       dateInfo.style.marginTop = '8px';
@@ -1449,25 +1519,42 @@ const handleFormSubmit = async (formData) => {
       companyHeader.appendChild(headerTop);
       container.appendChild(companyHeader);      // Table
       const table = document.createElement('table');
-  table.style.width = '100%';
-  table.style.borderCollapse = 'collapse';
-  table.style.tableLayout = 'fixed';
-  table.style.marginBottom = '4px';
+      table.style.width = '100%';
+      table.style.borderCollapse = 'collapse';
+      table.style.tableLayout = 'fixed';
+      table.style.marginBottom = '8px';
+      table.style.borderRadius = '8px';
+      table.style.overflow = 'hidden';
+      table.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
 
       const thead = document.createElement('thead');
       const trHead = document.createElement('tr');
-  const cols = ['Parent ID','Username','Name','Email','Contact','Role','Created At'];
-  // Reduce Name width, increase Email width, tighten remaining columns
-  const colWidths = ['6%','12%','28%','36%','8%','6%','4%'];
+      
+      let cols = [];
+      let colWidths = [];
+      
+      if (activeTab === 'children') {
+        cols = ['Student ID', 'Name', 'Parent', 'Birth Date', 'Enrollment Date'];
+        colWidths = ['15%', '25%', '25%', '17.5%', '17.5%'];
+      } else if (activeTab === 'parents') {
+        cols = ['ID', 'Username', 'Name', 'Email', 'Contact', 'Children', 'Role'];
+        colWidths = ['8%', '15%', '25%', '30%', '12%', '5%', '5%'];
+      } else {
+        cols = ['ID', 'Username', 'Name', 'Email', 'Contact', 'Role', 'Created At'];
+        colWidths = ['8%', '15%', '25%', '30%', '12%', '5%', '5%'];
+      }
+      
       cols.forEach((c,i) => {
-  const th = document.createElement('th');
+        const th = document.createElement('th');
         th.textContent = c;
-        th.style.background = '#f2f2f2';
-        th.style.border = '1px solid #ddd';
-  th.style.padding = '4px';
-  th.style.fontSize = '9px';
+        th.style.background = '#f8f9fa';
+        th.style.border = '1px solid #dee2e6';
+        th.style.padding = '8px 6px';
+        th.style.fontSize = '10px';
+        th.style.fontWeight = '600';
         th.style.textAlign = 'left';
         th.style.width = colWidths[i];
+        th.style.color = '#495057';
         trHead.appendChild(th);
       });
       thead.appendChild(trHead);
@@ -1476,32 +1563,74 @@ const handleFormSubmit = async (formData) => {
       const tbody = document.createElement('tbody');
       rows.forEach((r, idx) => {
         const tr = document.createElement('tr');
-        const name = `${r.first_name || ''}${r.middle_name ? ' ' + r.middle_name : ''}${r.last_name ? ' ' + r.last_name : ''}`.trim();
-        const values = [String(idx + 1), r.username || '', name || '', r.email || '', r.contact || '', r.role || '', (r.created_at || '').split('T')[0]];
+        tr.style.borderBottom = '1px solid #e9ecef';
+        tr.style.backgroundColor = idx % 2 === 0 ? '#ffffff' : '#f8f9fa';
+        
+        let values = [];
+        
+        if (activeTab === 'children') {
+          values = [
+            r.student_id || `STU-${idx + 1}`,
+            r.name || '',
+            r.parent_name || 'Not assigned',
+            r.date_of_birth || '-',
+            r.enrollment_date || '-'
+          ];
+        } else if (activeTab === 'parents') {
+          values = [
+            String(idx + 1),
+            r.username || '',
+            r.name || '',
+            r.email || '',
+            r.contact || '',
+            String(r.children_count || 0),
+            r.role || ''
+          ];
+        } else {
+          values = [
+            String(idx + 1),
+            r.username || '',
+            r.name || '',
+            r.email || '',
+            r.contact || '',
+            r.role || '',
+            (r.created_at || '').split('T')[0]
+          ];
+        }
+        
         values.forEach((v, cellIdx) => {
           const td = document.createElement('td');
           const text = (v || '').toString().trim();
           td.textContent = text;
-          td.style.border = '1px solid #ddd';
-          td.style.padding = '3px 5px';
+          td.style.border = '1px solid #dee2e6';
+          td.style.padding = '6px 8px';
           td.style.fontSize = '9px';
           td.style.wordBreak = 'break-word';
           td.style.whiteSpace = 'normal';
           td.style.overflowWrap = 'anywhere';
-          td.style.lineHeight = '1.3';
-          td.style.color = '#2c3e50';
+          td.style.lineHeight = '1.4';
+          td.style.color = '#495057';
           
           // Special styling for role column
-          if (cellIdx === 5 && text) {
+          const roleColumnIndex = activeTab === 'children' ? -1 : (activeTab === 'parents' ? 6 : 5);
+          if (cellIdx === roleColumnIndex && text) {
             const roleColors = {
-              'Parent': '#e74c3c',
-              'Teacher': '#27ae60',
-              'Admin': '#3498db',
-              'Student': '#f39c12'
+              'parent': '#dc3545',
+              'teacher': '#28a745', 
+              'admin': '#007bff',
+              'student': '#fd7e14'
             };
-            const roleColor = roleColors[text] || '#7f8c8d';
+            const roleColor = roleColors[text.toLowerCase()] || '#6c757d';
             td.style.color = roleColor;
             td.style.fontWeight = '600';
+            td.style.textTransform = 'capitalize';
+          }
+          
+          // Special styling for children count (parents only)
+          if (activeTab === 'parents' && cellIdx === 5) {
+            td.style.textAlign = 'center';
+            td.style.fontWeight = '600';
+            td.style.color = text === '0' ? '#6c757d' : '#007bff';
           }
           
           tr.appendChild(td);
@@ -1526,55 +1655,112 @@ const handleFormSubmit = async (formData) => {
 
       // Professional Summary Section
       const summarySection = document.createElement('div');
-      summarySection.style.marginTop = '20px';
-      summarySection.style.padding = '15px';
+      summarySection.style.marginTop = '24px';
+      summarySection.style.padding = '18px';
       summarySection.style.backgroundColor = '#f8f9fa';
-      summarySection.style.borderRadius = '6px';
-      summarySection.style.border = '1px solid #e9ecef';
+      summarySection.style.borderRadius = '8px';
+      summarySection.style.border = '1px solid #dee2e6';
+      summarySection.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)';
 
       const summaryTitle = document.createElement('h4');
-      summaryTitle.textContent = 'Report Summary';
-      summaryTitle.style.margin = '0 0 10px 0';
-      summaryTitle.style.fontSize = '12px';
+      summaryTitle.textContent = `${sectionName} Report Summary`;
+      summaryTitle.style.margin = '0 0 12px 0';
+      summaryTitle.style.fontSize = '13px';
       summaryTitle.style.fontWeight = '600';
-      summaryTitle.style.color = '#2c3e50';
+      summaryTitle.style.color = '#343a40';
 
       const summaryGrid = document.createElement('div');
       summaryGrid.style.display = 'grid';
       summaryGrid.style.gridTemplateColumns = 'repeat(3, 1fr)';
-      summaryGrid.style.gap = '15px';
-
-      // Count by role
-      const roleCounts = rows.reduce((acc, row) => {
-        const role = (row.role || '').charAt(0).toUpperCase() + (row.role || '').slice(1);
-        acc[role] = (acc[role] || 0) + 1;
-        return acc;
-      }, {});
+      summaryGrid.style.gap = '20px';
 
       const totalItem = document.createElement('div');
       totalItem.innerHTML = `
-        <div style="font-size: 11px; color: #7f8c8d; margin-bottom: 4px;">Total Users</div>
-        <div style="font-size: 18px; font-weight: bold; color: #2c3e50;">${rows.length}</div>
+        <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Total ${sectionName}</div>
+        <div style="font-size: 20px; font-weight: bold; color: #495057;">${rows.length}</div>
       `;
 
-      const rolesItem = document.createElement('div');
-      const rolesList = Object.entries(roleCounts).map(([role, count]) => 
-        `<span style="color: #34495e;">${role}: ${count}</span>`
-      ).join(' | ');
-      rolesItem.innerHTML = `
-        <div style="font-size: 11px; color: #7f8c8d; margin-bottom: 4px;">By Role</div>
-        <div style="font-size: 10px; line-height: 1.4;">${rolesList}</div>
-      `;
+      let middleItem = document.createElement('div');
+      let rightItem = document.createElement('div');
+
+      if (activeTab === 'children') {
+        // For children, show parent assignment stats
+        const assignedCount = rows.filter(r => r.parent_name && r.parent_name !== 'Not assigned').length;
+        const unassignedCount = rows.length - assignedCount;
+        
+        middleItem.innerHTML = `
+          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Parent Assignment</div>
+          <div style="font-size: 10px; line-height: 1.5;">
+            <div style="color: #28a745;">Assigned: ${assignedCount}</div>
+            <div style="color: #dc3545;">Unassigned: ${unassignedCount}</div>
+          </div>
+        `;
+        
+        rightItem.innerHTML = `
+          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Age Groups</div>
+          <div style="font-size: 10px; color: #495057; line-height: 1.5;">
+            <div>Birth dates recorded</div>
+            <div>Various age ranges</div>
+          </div>
+        `;
+      } else if (activeTab === 'parents') {
+        // For parents, show children statistics
+        const totalChildren = rows.reduce((sum, parent) => sum + (parent.children_count || 0), 0);
+        const parentsWithChildren = rows.filter(parent => (parent.children_count || 0) > 0).length;
+        
+        middleItem.innerHTML = `
+          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Children Stats</div>
+          <div style="font-size: 10px; line-height: 1.5;">
+            <div style="color: #007bff;">Total Children: ${totalChildren}</div>
+            <div style="color: #28a745;">Active Parents: ${parentsWithChildren}</div>
+          </div>
+        `;
+        
+        rightItem.innerHTML = `
+          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Account Status</div>
+          <div style="font-size: 10px; color: #495057; line-height: 1.5;">
+            <div>Active accounts: ${rows.length}</div>
+            <div>Parent role verified</div>
+          </div>
+        `;
+      } else {
+        // For teachers/admins, show role counts
+        const roleCounts = rows.reduce((acc, row) => {
+          const role = (row.role || '').charAt(0).toUpperCase() + (row.role || '').slice(1);
+          acc[role] = (acc[role] || 0) + 1;
+          return acc;
+        }, {});
+        
+        const rolesList = Object.entries(roleCounts).map(([role, count]) => 
+          `<div style="color: #495057;">${role}: ${count}</div>`
+        ).join('');
+        
+        middleItem.innerHTML = `
+          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">By Role</div>
+          <div style="font-size: 10px; line-height: 1.5;">${rolesList}</div>
+        `;
+        
+        rightItem.innerHTML = `
+          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">System Access</div>
+          <div style="font-size: 10px; color: #495057; line-height: 1.5;">
+            <div>Active accounts: ${rows.length}</div>
+            <div>Role verified</div>
+          </div>
+        `;
+      }
 
       const exportInfo = document.createElement('div');
       exportInfo.innerHTML = `
-        <div style="font-size: 11px; color: #7f8c8d; margin-bottom: 4px;">Export Info</div>
-        <div style="font-size: 10px; color: #34495e;">Format: PDF</div>
-        <div style="font-size: 10px; color: #34495e;">Source: Admin Panel</div>
+        <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Export Details</div>
+        <div style="font-size: 10px; color: #495057; line-height: 1.5;">
+          <div>Format: PDF Document</div>
+          <div>Source: Admin Panel</div>
+          <div>Section: ${sectionName}</div>
+        </div>
       `;
 
       summaryGrid.appendChild(totalItem);
-      summaryGrid.appendChild(rolesItem);
+      summaryGrid.appendChild(middleItem);
       summaryGrid.appendChild(exportInfo);
       summarySection.appendChild(summaryTitle);
       summarySection.appendChild(summaryGrid);
@@ -1596,15 +1782,15 @@ const handleFormSubmit = async (formData) => {
 
       const confidential = document.createElement('div');
       confidential.innerHTML = `
-        <div style="font-weight: 600; color: #e74c3c;">CONFIDENTIAL</div>
-        <div>This document contains sensitive information</div>
+        <div style="font-weight: 600; color: #dc3545; font-size: 10px;">CONFIDENTIAL</div>
+        <div style="font-size: 8px; color: #6c757d;">Sensitive Information</div>
       `;
 
       const timestamp = document.createElement('div');
       timestamp.style.textAlign = 'center';
       timestamp.innerHTML = `
-        <div style="font-weight: 600;">AugmentED Learning System</div>
-        <div>Generated: ${new Date().toLocaleString('en-US', { 
+        <div style="font-weight: 600; font-size: 10px; color: #495057;">AugmentED Learning System</div>
+        <div style="font-size: 8px; color: #6c757d;">Generated: ${new Date().toLocaleString('en-US', { 
           dateStyle: 'medium', 
           timeStyle: 'short' 
         })}</div>
@@ -1613,8 +1799,9 @@ const handleFormSubmit = async (formData) => {
       const pageInfo = document.createElement('div');
       pageInfo.style.textAlign = 'right';
       pageInfo.innerHTML = `
-        <div>Document Version: 1.0</div>
-        <div>Format: PDF Export</div>
+        <div style="font-size: 8px; color: #6c757d;">Document Version: 1.0</div>
+        <div style="font-size: 8px; color: #6c757d;">Format: PDF Export</div>
+        <div style="font-size: 8px; color: #6c757d;">Records: ${rows.length}</div>
       `;
 
       footerContent.appendChild(confidential);
@@ -1687,8 +1874,8 @@ const handleFormSubmit = async (formData) => {
       minHeight: isMobile ? '400px' : '400px',
       marginBottom: isMobile ? '1rem' : '0'
     }}>
-      {/* Removed debug logging for student section names */}
-      {activeTab === 'students' && (
+      {/* Parents Section */}
+      {activeTab === 'parents' && (
         <>
           {/* Bulk toolbar */}
           {selectedIds.size > 0 && (
@@ -1737,107 +1924,180 @@ const handleFormSubmit = async (formData) => {
                 <th style={{ backgroundColor: '#f3fafd' }}>Name</th>
                 <th style={{ backgroundColor: '#f3fafd' }}>Email</th>
                 <th style={{ backgroundColor: '#f3fafd' }}>Contact</th>
+                <th style={{ backgroundColor: '#f3fafd' }}>Children</th>
                 <th style={{ backgroundColor: '#f3fafd', borderTopRightRadius: '16px', textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {users.map((parent, idx) => (
-                <React.Fragment key={parent.id}>
-                  <tr style={{ background: '#f3fafd', borderRadius: '12px', cursor: 'pointer', transition: 'box-shadow 0.2s', boxShadow: '0 2px 8px rgba(33,147,176,0.05)' }} onClick={() => handleRowClick(parent)}>
-                    <td style={{ width: 48 }} onClick={e => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(parent.id)}
-                        onChange={(e) => {
-                          e.stopPropagation();
-                          const newSet = new Set(selectedIds);
-                          if (e.target.checked) newSet.add(parent.id);
-                          else newSet.delete(parent.id);
-                          setSelectedIds(newSet);
-                        }}
-                        onClick={(ev) => ev.stopPropagation()}
-                        aria-label={`Select ${parent.first_name} ${parent.last_name}`}
-                      />
-                    </td>
-                    <td>{idx + 1}</td>
-                    <td>{parent.first_name} {parent.middle_name ? parent.middle_name + ' ' : ''}{parent.last_name}</td>
-                    <td>{parent.emailaddress || parent.email}</td>
-                    <td>{parent.contactnumber || parent.contact || '-'}</td>
-                    <td style={{ textAlign: 'center' }}>
-                      <Button variant="outline-info" size="sm" className="edit-btn" style={{ borderRadius: '20px', background: 'transparent', marginRight: '6px' }} onClick={e => { e.stopPropagation(); handleShowModal('edit', parent); }}><FiEdit2 /></Button>
-                      <Button variant="outline-danger" size="sm" className="delete-btn" style={{ borderRadius: '20px', background: 'transparent' }} onClick={e => { e.stopPropagation(); handleShowModal('delete', parent); }}><FiTrash2 /></Button>
-                    </td>
-                  </tr>
-
-                  {selectedUser && selectedUser.id === parent.id && parent.role === 'parent' && (
-                    <tr className="details-row">
-                      <td colSpan={6} style={{ padding: 0, background: 'transparent' }}>
-                        <div style={{ padding: '12px 16px' }}>
-                          <div className="d-flex justify-content-between align-items-center mb-2">
-                            <h6 className="mb-0">Children of {parent.first_name} {parent.last_name}</h6>
-                            <div className="d-flex gap-2">
-                              <Button
-                                variant="light"
-                                className="add-children-btn"
-                                onClick={(e) => { e.stopPropagation(); setShowAddChildModal(true); }}
-                                style={{ borderRadius: '16px', padding: '4px 12px', fontSize: '0.85rem', background: '#ffffff', color: colors.primary, border: 'none' }}
-                              >
-                                <FiUserPlus size={14} className="me-1" /> ADD CHILD
-                              </Button>
-                              <Button
-                                variant="light"
-                                className="close-children-btn"
-                                onClick={(e) => { e.stopPropagation(); setSelectedUser(null); }}
-                                style={{ borderRadius: '16px', padding: '4px 12px', fontSize: '0.85rem', background: '#ffffff', color: colors.danger, border: 'none' }}
-                                aria-label="Close children table"
-                              >
-                                × Close
-                              </Button>
-                            </div>
-                          </div>
-                          <Table bordered hover responsive className="pretty-table" style={{ borderRadius: '12px', marginBottom: 0 }}>
-                            <thead>
-                              <tr>
-                                <th>Student ID</th>
-                                <th>Name</th>
-                                <th>Birth Date</th>
-                                <th>Enrollment Date</th>
-                                <th style={{ textAlign: 'center' }}>Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {students.filter(s => s.parent_id === parent.id).map(child => (
-                                <tr key={child.id}>
-                                  <td>{child.student_id}</td>
-                                  <td>{`${child.first_name || ''}${child.middle_name || child.middlename ? ' ' + (child.middle_name || child.middlename) : ''} ${child.last_name || ''}`.trim()}</td>
-                                  <td>{child.date_of_birth}</td>
-                                  <td>{child.enrollment_date}</td>
-                                  <td style={{ textAlign: 'center' }}>
-                                    <Button variant="outline-info" className="edit-btn" style={{ borderRadius: '20px', padding: '6px 12px', marginRight: '6px' }} onClick={e => { e.stopPropagation(); handleEditChild(child); }}><FiEdit2 /></Button>
-                                    <Button variant="outline-danger" className="delete-btn" style={{ borderRadius: '20px', padding: '6px 12px' }} onClick={e => { e.stopPropagation(); handleDeleteChild(child); }}><FiTrash2 /></Button>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </Table>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
+                <tr key={parent.id} style={{ background: '#f3fafd', borderRadius: '12px', transition: 'box-shadow 0.2s', boxShadow: '0 2px 8px rgba(33,147,176,0.05)' }}>
+                  <td style={{ width: 48 }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(parent.id)}
+                      onChange={(e) => {
+                        const newSet = new Set(selectedIds);
+                        if (e.target.checked) newSet.add(parent.id);
+                        else newSet.delete(parent.id);
+                        setSelectedIds(newSet);
+                      }}
+                      aria-label={`Select ${parent.first_name} ${parent.last_name}`}
+                    />
+                  </td>
+                  <td>{idx + 1}</td>
+                  <td>{parent.first_name} {parent.middle_name ? parent.middle_name + ' ' : ''}{parent.last_name}</td>
+                  <td>{parent.emailaddress || parent.email}</td>
+                  <td>{parent.contactnumber || parent.contact || '-'}</td>
+                  <td style={{ textAlign: 'center' }}>
+                    <Badge bg="info" style={{ borderRadius: '12px' }}>
+                      {students.filter(s => s.parent_id === parent.id).length}
+                    </Badge>
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <Button variant="outline-success" size="sm" className="add-child-btn" style={{ borderRadius: '20px', background: 'transparent', marginRight: '6px' }} onClick={() => handleAddChildToParent(parent)} title={`Add Child to ${parent.first_name} ${parent.last_name}`}><FiUserPlus /></Button>
+                    <Button variant="outline-info" size="sm" className="edit-btn" style={{ borderRadius: '20px', background: 'transparent', marginRight: '6px' }} onClick={() => handleShowModal('edit', parent)}><FiEdit2 /></Button>
+                    <Button variant="outline-danger" size="sm" className="delete-btn" style={{ borderRadius: '20px', background: 'transparent' }} onClick={() => handleShowModal('delete', parent)}><FiTrash2 /></Button>
+                  </td>
+                </tr>
               ))}
             </tbody>
           </Table>
-          
+        </>
+      )}
+
+      {/* Children Section */}
+      {activeTab === 'children' && (
+        <>
+          {/* Bulk toolbar */}
+          {selectedIds.size > 0 && (
+            <div className="bulk-toolbar d-flex justify-content-between align-items-center mb-2" style={{ marginBottom: '0.25rem', transform: 'translateY(6px)' }}>
+              <style>{`
+                .bulk-toolbar .btn-csv { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-csv:hover { background: rgba(40,199,111,0.08); border-color: rgba(40,199,111,0.12); }
+                .bulk-toolbar .btn-pdf { color: ${colors.primary}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
+                .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
+                .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-delete:hover { background: rgba(234,84,85,0.06); border-color: rgba(234,84,85,0.10); }
+              `}</style>
+              <div>{selectedIds.size} selected</div>
+              <div className="d-flex gap-2">
+                <Button size="sm" className="btn-csv" onClick={() => handleExportSelected([...selectedIds])}>Export CSV</Button>
+                <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF([...selectedIds])}>Export PDF</Button>
+                <Button size="sm" className="btn-delete" onClick={() => { setModalAction({ type: 'bulk-delete', data: [...selectedIds] }); setShowDeleteModal(true); }}>Delete Selected</Button>
+                <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
+              </div>
+            </div>
+          )}
+          <Table bordered hover responsive className="mt-3 pretty-table" style={{ borderRadius: '16px', boxShadow: '0 4px 16px rgba(255,193,7,0.08)' }}>
+            <thead style={{ background: 'linear-gradient(90deg, #fffdf2 80%, #fffbf0 100%)', borderRadius: '16px' }}>
+              <tr>
+                <th style={{ backgroundColor: '#fffdf2', borderTopLeftRadius: '16px', width: 48 }}>
+                  <input
+                    type="checkbox"
+                    checked={students.length > 0 && students.every(u => selectedIds.has(u.id))}
+                    onChange={(e) => {
+                      const newSet = new Set(selectedIds);
+                      if (e.target.checked) {
+                        students.forEach(u => newSet.add(u.id));
+                        setSelectAllOnPage(true);
+                      } else {
+                        students.forEach(u => newSet.delete(u.id));
+                        setSelectAllOnPage(false);
+                      }
+                      setSelectedIds(newSet);
+                    }}
+                    aria-label="Select all on page"
+                  />
+                </th>
+                <th style={{ backgroundColor: '#fffdf2' }}>Student ID</th>
+              <th style={{ backgroundColor: '#fffdf2' }}>Name</th>
+              <th style={{ backgroundColor: '#fffdf2' }}>Parent</th>
+              <th style={{ backgroundColor: '#fffdf2' }}>Birth Date</th>
+              <th style={{ backgroundColor: '#fffdf2' }}>Enrollment Date</th>
+              <th style={{ backgroundColor: '#fffdf2', borderTopRightRadius: '16px', textAlign: 'center' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((student, idx) => (
+              <tr key={student.id} style={{ background: '#fffdf2', borderRadius: '12px', transition: 'box-shadow 0.2s', boxShadow: '0 2px 8px rgba(255,193,7,0.08)' }}>
+                <td style={{ width: 48 }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(student.id)}
+                    onChange={(e) => {
+                      const newSet = new Set(selectedIds);
+                      if (e.target.checked) newSet.add(student.id);
+                      else newSet.delete(student.id);
+                      setSelectedIds(newSet);
+                    }}
+                    aria-label={`Select ${student.first_name} ${student.last_name}`}
+                  />
+                </td>
+                <td>{student.student_id || `STU-${idx + 1}`}</td>
+                <td>{`${student.first_name || ''}${student.middle_name || student.middlename ? ' ' + (student.middle_name || student.middlename) : ''} ${student.last_name || ''}`.trim()}</td>
+                <td>{`${student.parent_first_name || ''}${student.parent_middle_name ? ' ' + student.parent_middle_name : ''} ${student.parent_last_name || ''}`.trim() || 'Not assigned'}</td>
+                <td>{student.date_of_birth || '-'}</td>
+                <td>{student.enrollment_date || '-'}</td>
+                <td style={{ textAlign: 'center' }}>
+                  <Button variant="outline-info" size="sm" className="edit-btn" style={{ borderRadius: '20px', background: 'transparent', marginRight: '6px' }} onClick={() => handleEditChild(student)}><FiEdit2 /></Button>
+                  <Button variant="outline-danger" size="sm" className="delete-btn" style={{ borderRadius: '20px', background: 'transparent' }} onClick={() => handleDeleteChild(student)}><FiTrash2 /></Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
         </>
       )}
 
       {/* Teachers Section */}
       {activeTab === 'teachers' && (
-        <Table bordered hover responsive className="mt-3 pretty-table" style={{ borderRadius: '16px', boxShadow: '0 4px 16px rgba(151,247,151,0.08)' }}>
-          <thead style={{ background: 'linear-gradient(90deg, #f6fcf6 80%, #eafbe6 100%)', borderRadius: '16px' }}>
-            <tr>
-              <th style={{ backgroundColor: '#f6fcf6', borderTopLeftRadius: '16px' }}>Teacher ID</th>
+        <>
+          {/* Bulk toolbar */}
+          {selectedIds.size > 0 && (
+            <div className="bulk-toolbar d-flex justify-content-between align-items-center mb-2" style={{ marginBottom: '0.25rem', transform: 'translateY(6px)' }}>
+              <style>{`
+                .bulk-toolbar .btn-csv { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-csv:hover { background: rgba(40,199,111,0.08); border-color: rgba(40,199,111,0.12); }
+                .bulk-toolbar .btn-pdf { color: ${colors.primary}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
+                .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
+                .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-delete:hover { background: rgba(234,84,85,0.06); border-color: rgba(234,84,85,0.10); }
+              `}</style>
+              <div>{selectedIds.size} selected</div>
+              <div className="d-flex gap-2">
+                <Button size="sm" className="btn-csv" onClick={() => handleExportSelected([...selectedIds])}>Export CSV</Button>
+                <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF([...selectedIds])}>Export PDF</Button>
+                <Button size="sm" className="btn-delete" onClick={() => { setModalAction({ type: 'bulk-delete', data: [...selectedIds] }); setShowDeleteModal(true); }}>Delete Selected</Button>
+                <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
+              </div>
+            </div>
+          )}
+          <Table bordered hover responsive className="mt-3 pretty-table" style={{ borderRadius: '16px', boxShadow: '0 4px 16px rgba(151,247,151,0.08)' }}>
+            <thead style={{ background: 'linear-gradient(90deg, #f6fcf6 80%, #eafbe6 100%)', borderRadius: '16px' }}>
+              <tr>
+                <th style={{ backgroundColor: '#f6fcf6', borderTopLeftRadius: '16px', width: 48 }}>
+                  <input
+                    type="checkbox"
+                    checked={users.length > 0 && users.every(u => selectedIds.has(u.id))}
+                    onChange={(e) => {
+                      const newSet = new Set(selectedIds);
+                      if (e.target.checked) {
+                        users.forEach(u => newSet.add(u.id));
+                        setSelectAllOnPage(true);
+                      } else {
+                        users.forEach(u => newSet.delete(u.id));
+                        setSelectAllOnPage(false);
+                      }
+                      setSelectedIds(newSet);
+                    }}
+                    aria-label="Select all on page"
+                  />
+                </th>
+                <th style={{ backgroundColor: '#f6fcf6' }}>Teacher ID</th>
               <th style={{ backgroundColor: '#f6fcf6' }}>Teacher Name</th>
               <th style={{ backgroundColor: '#f6fcf6' }}>Email</th>
               <th style={{ backgroundColor: '#f6fcf6' }}>Contact</th>
@@ -1847,6 +2107,19 @@ const handleFormSubmit = async (formData) => {
           <tbody>
             {users.map((teacher, idx) => (
               <tr key={teacher.id} style={{ background: '#f6fcf6', borderRadius: '12px', transition: 'box-shadow 0.2s', boxShadow: '0 2px 8px rgba(151,247,151,0.08)' }}>
+                <td style={{ width: 48 }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(teacher.id)}
+                    onChange={(e) => {
+                      const newSet = new Set(selectedIds);
+                      if (e.target.checked) newSet.add(teacher.id);
+                      else newSet.delete(teacher.id);
+                      setSelectedIds(newSet);
+                    }}
+                    aria-label={`Select ${teacher.first_name} ${teacher.last_name}`}
+                  />
+                </td>
                 <td>{idx + 1}</td>
                 <td>{teacher.first_name} {teacher.middle_name ? teacher.middle_name + ' ' : ''}{teacher.last_name}</td>
                 <td>{teacher.email}</td>
@@ -1859,14 +2132,56 @@ const handleFormSubmit = async (formData) => {
             ))}
           </tbody>
         </Table>
+        </>
       )}
 
       {/* Admins Section */}
       {activeTab === 'admins' && (
-        <Table bordered hover responsive className="mt-3 pretty-table" style={{ borderRadius: '16px', boxShadow: '0 4px 16px rgba(67,162,206,0.08)' }}>
-          <thead style={{ background: 'linear-gradient(90deg, #f5f7fd 80%, #eceffd 100%)', borderRadius: '16px' }}>
-            <tr>
-              <th style={{ backgroundColor: '#f5f7fd', borderTopLeftRadius: '16px' }}>Admin ID</th>
+        <>
+          {/* Bulk toolbar */}
+          {selectedIds.size > 0 && (
+            <div className="bulk-toolbar d-flex justify-content-between align-items-center mb-2" style={{ marginBottom: '0.25rem', transform: 'translateY(6px)' }}>
+              <style>{`
+                .bulk-toolbar .btn-csv { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-csv:hover { background: rgba(40,199,111,0.08); border-color: rgba(40,199,111,0.12); }
+                .bulk-toolbar .btn-pdf { color: ${colors.primary}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
+                .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
+                .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-delete:hover { background: rgba(234,84,85,0.06); border-color: rgba(234,84,85,0.10); }
+              `}</style>
+              <div>{selectedIds.size} selected</div>
+              <div className="d-flex gap-2">
+                <Button size="sm" className="btn-csv" onClick={() => handleExportSelected([...selectedIds])}>Export CSV</Button>
+                <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF([...selectedIds])}>Export PDF</Button>
+                <Button size="sm" className="btn-delete" onClick={() => { setModalAction({ type: 'bulk-delete', data: [...selectedIds] }); setShowDeleteModal(true); }}>Delete Selected</Button>
+                <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
+              </div>
+            </div>
+          )}
+          <Table bordered hover responsive className="mt-3 pretty-table" style={{ borderRadius: '16px', boxShadow: '0 4px 16px rgba(67,162,206,0.08)' }}>
+            <thead style={{ background: 'linear-gradient(90deg, #f5f7fd 80%, #eceffd 100%)', borderRadius: '16px' }}>
+              <tr>
+                <th style={{ backgroundColor: '#f5f7fd', borderTopLeftRadius: '16px', width: 48 }}>
+                  <input
+                    type="checkbox"
+                    checked={users.length > 0 && users.every(u => selectedIds.has(u.id))}
+                    onChange={(e) => {
+                      const newSet = new Set(selectedIds);
+                      if (e.target.checked) {
+                        users.forEach(u => newSet.add(u.id));
+                        setSelectAllOnPage(true);
+                      } else {
+                        users.forEach(u => newSet.delete(u.id));
+                        setSelectAllOnPage(false);
+                      }
+                      setSelectedIds(newSet);
+                    }}
+                    aria-label="Select all on page"
+                  />
+                </th>
+                <th style={{ backgroundColor: '#f5f7fd' }}>Admin ID</th>
               <th style={{ backgroundColor: '#f5f7fd' }}>Admin Name</th>
               <th style={{ backgroundColor: '#f5f7fd' }}>Email</th>
               <th style={{ backgroundColor: '#f5f7fd' }}>Contact</th>
@@ -1876,6 +2191,19 @@ const handleFormSubmit = async (formData) => {
           <tbody>
             {users.map((admin, idx) => (
               <tr key={admin.id} style={{ background: '#f5f7fd', borderRadius: '12px', transition: 'box-shadow 0.2s', boxShadow: '0 2px 8px rgba(67,162,206,0.08)' }}>
+                <td style={{ width: 48 }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(admin.id)}
+                    onChange={(e) => {
+                      const newSet = new Set(selectedIds);
+                      if (e.target.checked) newSet.add(admin.id);
+                      else newSet.delete(admin.id);
+                      setSelectedIds(newSet);
+                    }}
+                    aria-label={`Select ${admin.first_name} ${admin.last_name}`}
+                  />
+                </td>
                 <td>{idx + 1}</td>
                 <td>{admin.first_name} {admin.middle_name ? admin.middle_name + ' ' : ''}{admin.last_name}</td>
                 <td>{admin.email}</td>
@@ -1888,30 +2216,12 @@ const handleFormSubmit = async (formData) => {
             ))}
           </tbody>
         </Table>
+        </>
       )}
     </div>
   );
 
-  const renderPagination = (users) => {
-    const totalPages = Math.ceil(users.length / usersPerPage);
-    return (
-      <Pagination className="justify-content-center mt-3">
-        <Pagination.First onClick={() => setCurrentPage(1)} disabled={currentPage === 1} />
-        <Pagination.Prev onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))} disabled={currentPage === 1} />
-        {[...Array(totalPages).keys()].map(page => (
-          <Pagination.Item
-            key={page + 1}
-            active={page + 1 === currentPage}
-            onClick={() => setCurrentPage(page + 1)}
-          >
-            {page + 1}
-          </Pagination.Item>
-        ))}
-        <Pagination.Next onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))} disabled={currentPage === totalPages} />
-        <Pagination.Last onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} />
-      </Pagination>
-    );
-  };
+
 
   return (
     <div className="d-flex min-vh-100" style={{
@@ -1996,18 +2306,7 @@ const handleFormSubmit = async (formData) => {
               <h3 className={`mb-1 ${isMobile ? 'fs-5' : ''}`}>Admin Dashboard</h3>
               <p className={`text-muted mb-0 ${isMobile ? 'small' : ''}`} style={{ fontSize: isMobile ? '0.8rem' : '0.9rem' }}>Manage users, teachers, and admins</p>
             </div>
-            <div style={{ width: isMobile ? '100%' : '220px' }}>
-              <InputGroup size="sm">
-                <Form.Control
-                  placeholder="Search..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-                <InputGroup.Text>
-                  <FiSearch />
-                </InputGroup.Text>
-              </InputGroup>
-            </div>
+            {/* search moved into content header so it sits beside the create button */}
           </div>              {/* Stats Cards */}
           <Row className={`mb-3 px-4 ${isMobile ? 'g-2' : 'g-2'}`}>
             <Col xs={12} md={3}>                  <Card style={{
@@ -2110,7 +2409,8 @@ const handleFormSubmit = async (formData) => {
               gap: isMobile ? '0.25rem' : '8px'
             }}>
             {[
-              { id: 'students', label: 'Students' },
+              { id: 'parents', label: 'Parents' },
+              { id: 'children', label: 'Children' },
               { id: 'teachers', label: 'Teachers' },
               { id: 'admins', label: 'Admins' }
             ].map((tab) => (
@@ -2180,25 +2480,62 @@ const handleFormSubmit = async (formData) => {
             </div>
             {/* Content Header */}
             <div className={`d-flex ${isMobile ? 'flex-column' : 'justify-content-between align-items-center'} mb-4`}>
-              <div className={isMobile ? 'text-center mb-3' : ''}>
-                <h4 className={`mb-1 ${isMobile ? 'fs-6' : ''}`}>
-                  {activeTab === "students" ? "Student and Parent List" :
-                    activeTab === "teachers" ? "Teachers List" : "Admins List"}
-                </h4>
-                <p className={`text-muted mb-0 ${isMobile ? 'small' : ''}`}>
-                  {activeTab === "students" ? "Manage Pareant and Student Credentials" :
-                    activeTab === "teachers" ? "Manage teacher accounts" : "Manage admin accounts"}
-                </p>
+              <div className={isMobile ? 'text-center mb-3' : ''} style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', gap: '12px' }}>
+                <div>
+                  <h4 className={`mb-1 ${isMobile ? 'fs-6' : ''}`}>
+                    {activeTab === "parents" ? "Parents List" :
+                      activeTab === "children" ? "Children List" :
+                      activeTab === "teachers" ? "Teachers List" : "Admins List"}
+                  </h4>
+                  <p className={`text-muted mb-0 ${isMobile ? 'small' : ''}`}>
+                    {activeTab === "parents" ? "Manage Parent Credentials" :
+                      activeTab === "children" ? "Manage Student Credentials" :
+                      activeTab === "teachers" ? "Manage teacher accounts" : "Manage admin accounts"}
+                  </p>
+                </div>
               </div>
-              <Button
-                variant="outline-primary"
-                size="sm"
-                onClick={() => handleShowModal('create')}
-                className={isMobile ? 'w-100' : ''}
-              >
-                <FiPlus size={14} className="me-1" />
-                CREATE ACCOUNT
-              </Button>
+              <div style={{ display: 'flex', gap: isMobile ? '8px' : '12px', alignItems: 'center', width: isMobile ? '100%' : 'auto' }}>
+                {activeTab === 'children' ? (
+                  <div style={{ flex: isMobile ? '1 1 auto' : '0 0 320px' }}>
+                    <InputGroup size="sm">
+                      <Form.Control
+                        placeholder="Search students..."
+                        value={childSearchTerm}
+                        onChange={(e) => setChildSearchTerm(e.target.value)}
+                      />
+                      <InputGroup.Text>
+                        <FiSearch />
+                      </InputGroup.Text>
+                    </InputGroup>
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ flex: isMobile ? '1 1 auto' : '0 0 320px' }}>
+                      <InputGroup size="sm">
+                        <Form.Control
+                          placeholder="Search..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                        <InputGroup.Text>
+                          <FiSearch />
+                        </InputGroup.Text>
+                      </InputGroup>
+                    </div>
+                    {activeTab !== 'children' && (
+                      <Button
+                        variant="outline-primary"
+                        size="sm"
+                        onClick={() => handleShowModal('create')}
+                        className={isMobile ? 'w-100' : ''}
+                      >
+                        <FiPlus size={14} className="me-1" />
+                        CREATE ACCOUNT
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -2211,31 +2548,27 @@ const handleFormSubmit = async (formData) => {
                 </div>
               )}
 
-              {activeTab === "students" && (
+              {activeTab === "parents" && (
                 <>
-                  {/* Removed Section Filter Dropdown */}
-                  {renderUserTable(filteredParents, 'students')}
-                  <div style={{ marginTop: isMobile ? '1rem' : 'auto', marginBottom: isMobile ? '1rem' : '0' }}>
-                    {renderPagination(filteredStudents)}
-                  </div>
+                  {renderUserTable(filteredParents, 'parents')}
+                </>
+              )}
+
+              {activeTab === "children" && (
+                <>
+                  {renderUserTable(filteredStudents, 'children')}
                 </>
               )}
 
               {activeTab === "teachers" && (
                 <>
                   {renderUserTable(filteredTeachers, 'teachers')}
-                  <div style={{ marginTop: isMobile ? '1rem' : 'auto', marginBottom: isMobile ? '1rem' : '0' }}>
-                    {renderPagination(filteredTeachers)}
-                  </div>
                 </>
               )}
 
               {activeTab === "admins" && (
                 <>
                   {renderUserTable(filteredAdmins, 'admins')}
-                  <div style={{ marginTop: isMobile ? '1rem' : 'auto', marginBottom: isMobile ? '1rem' : '0' }}>
-                    {renderPagination(filteredAdmins)}
-                  </div>
                 </>
               )}
             </div>
@@ -2287,7 +2620,7 @@ const handleFormSubmit = async (formData) => {
       >
         <Modal.Header closeButton>
           <Modal.Title className={isMobile ? 'fs-6' : ''}>
-            Add Child to {selectedUser?.first_name} {selectedUser?.last_name}
+            Add Child to {childForm.parentName || 'Parent'}
           </Modal.Title>
         </Modal.Header>
         <Modal.Body>
