@@ -973,8 +973,6 @@ const SubjectModulePage = () => {
   };
   
   const studentsToShow = (() => {
-    // Removed excessive logging for performance
-
     if (String(userRole).toLowerCase() === 'parent') {
       // For parent, only show the currently selected child from context (set by Choose/Profile pages)
       if (!selectedChildId) return [];
@@ -983,8 +981,24 @@ const SubjectModulePage = () => {
     }
     
     if (String(userRole).toLowerCase() === 'teacher') {
-      // For teachers, show only students from their assigned section
-      return realStudents;
+      // For teachers, only show students from their assigned section
+      // If teacher has no assigned section, show empty list
+      if (!teacherSection) {
+        console.log('Teacher has no assigned section, showing no students');
+        return [];
+      }
+      
+      // Filter students to only show those in the teacher's section
+      const sectionStudents = realStudents.filter(student => {
+        const matches = student.section_id === teacherSection.id;
+        if (!matches) {
+          console.log(`Student ${student.name} (section: ${student.section_id}) does not match teacher section ${teacherSection.id}`);
+        }
+        return matches;
+      });
+      
+      console.log(`Teacher showing ${sectionStudents.length} students from section ${teacherSection.name}`);
+      return sectionStudents;
     }
     
     // For admins and other roles, show all real students
@@ -1351,166 +1365,101 @@ const SubjectModulePage = () => {
     };
 
     const fetchTeacherSectionAndStudents = async () => {
-      
       try {
         setStudentsLoading(true);
         
+        // Use admin client for teachers to bypass RLS policies, similar to ClassroomPage
+        const client = supabaseAdmin && userRole === 'teacher' ? supabaseAdmin : supabase;
         
-        // Debug: Check all sections to see what's available
-        const { data: allSections, error: allSectionsError } = await supabase
+        // Fetch sections with teacher info - this mirrors ClassroomPage's approach
+        const { data: sectionsData, error: sectionsError } = await client
           .from('sections')
-          .select('id, name, teacher_id, is_active');
-          
-        
-        // Debug: Check if current user exists in user_profiles
-        const { data: currentUser, error: userError } = await supabase
-          .from('user_profiles')
-          .select('id, role, first_name, last_name')
-          .eq('id', userId)
-          .single();
-          
-        
-        // First, get the teacher's assigned section
-        const { data: sections, error: sectionsError } = await supabase
-          .from('sections')
-          .select('id, name, teacher_id')
-          .eq('teacher_id', userId)
+          .select(`
+            id, 
+            name, 
+            time_period, 
+            classroom_number, 
+            teacher_id, 
+            max_students, 
+            school_year, 
+            is_active, 
+            created_at,
+            user_profiles(id, first_name, last_name, profile_picture_url)
+          `)
           .eq('is_active', true)
-          .single();
+          .order('name', { ascending: true });
           
-          
-        if (sectionsError && sectionsError.code !== 'PGRST116') { // PGRST116 is "no rows found"
-          setStudentsLoading(false);
+        if (sectionsError) {
+          console.error('Error fetching sections:', sectionsError);
+          setTeacherSection(null);
+          setRealStudents([]);
           return;
         }
+
+        // Find the section assigned to current teacher
+        const assignedSection = sectionsData?.find(section => section.teacher_id === userId);
         
-        if (sections) {
-          setTeacherSection(sections);
+        if (assignedSection) {
+          console.log('Teacher assigned to section:', assignedSection.name);
+          setTeacherSection(assignedSection);
           
-          // Now fetch students from that section
-          const { data: students, error: studentsError } = await supabase
+          // Fetch students from the assigned section
+          const { data: students, error: studentsError } = await client
             .from('students')
             .select(`
               id,
+              parent_id,
+              section_id,
               first_name,
               last_name,
               student_id,
-              section_id,
               profile_picture_url,
-              is_active
+              enrollment_date,
+              is_active,
+              created_at,
+              user_profiles:parent_id(id, first_name, last_name, profile_picture_url, email, contact),
+              section:sections(id, name)
             `)
-            .eq('section_id', sections.id)
+            .eq('section_id', assignedSection.id)
             .eq('is_active', true)
             .order('last_name', { ascending: true })
             .order('first_name', { ascending: true });
             
           if (studentsError) {
+            console.error('Error fetching students:', studentsError);
+            setRealStudents([]);
           } else if (students) {
-            // Transform real students to match the expected format
-            const transformedStudents = students.map((student, index) => {
-              return {
-                id: student.id,
-                name: `${student.first_name} ${student.last_name}`,
-                student_id: student.student_id,
-                section_id: student.section_id,
-                progress: {
-                  modules: [] // Will be populated with actual module data when modules are loaded
-                }
-              };
-            });
+            // Transform students to match expected format
+            const transformedStudents = students.map((student) => ({
+              id: student.id,
+              name: `${student.first_name} ${student.last_name}`,
+              first_name: student.first_name,
+              last_name: student.last_name,
+              student_id: student.student_id,
+              section_id: student.section_id,
+              section_name: student.section?.name || assignedSection.name,
+              parent_info: student.user_profiles,
+              profile_picture_url: student.profile_picture_url,
+              enrollment_date: student.enrollment_date,
+              progress: {
+                modules: [] // Will be populated with actual module data when modules are loaded
+              }
+            }));
             
+            console.log(`Loaded ${transformedStudents.length} students from section ${assignedSection.name}`);
             setRealStudents(transformedStudents);
           }
         } else {
-          
-          // Alternative: Try to find the teacher by matching with user_profiles
-          // and then find sections assigned to that teacher
-          if (currentUser) {
-            
-            // Try to find sections where teacher_id matches current user id
-            const matchingSections = allSections?.filter(section => 
-              section.teacher_id === userId || section.teacher_id === currentUser.id
-            );
-            
-            
-            if (matchingSections && matchingSections.length > 0) {
-              const firstSection = matchingSections[0];
-              setTeacherSection(firstSection);
-              
-              // Continue with student fetching...
-              const { data: students, error: studentsError } = await supabase
-                .from('students')
-                .select(`
-                  id,
-                  first_name,
-                  last_name,
-                  student_id,
-                  section_id,
-                  profile_picture_url,
-                  is_active
-                `)
-                .eq('section_id', firstSection.id)
-                .eq('is_active', true)
-                .order('last_name', { ascending: true })
-                .order('first_name', { ascending: true });
-                
-              
-              if (students) {
-                const transformedStudents = students.map((student) => ({
-                  id: student.id,
-                  name: `${student.first_name} ${student.last_name}`,
-                  student_id: student.student_id,
-                  section_id: student.section_id,
-                  progress: {
-                    modules: []
-                  }
-                }));
-                
-                setRealStudents(transformedStudents);
-              }
-            } else {
-              // For debugging: show all students if teacher has no section
-              const { data: allStudents, error: allStudentsError } = await supabase
-                .from('students')
-                .select(`
-                  id,
-                  first_name,
-                  last_name,
-                  student_id,
-                  section_id,
-                  profile_picture_url,
-                  is_active,
-                  section:sections(id, name)
-                `)
-                .eq('is_active', true)
-                .order('last_name', { ascending: true })
-                .order('first_name', { ascending: true });
-                
-              
-              if (allStudents) {
-                const transformedStudents = allStudents.map((student) => ({
-                  id: student.id,
-                  name: `${student.first_name} ${student.last_name}`,
-                  student_id: student.student_id,
-                  section_id: student.section_id,
-                  section_name: student.section?.name,
-                  progress: {
-                    modules: []
-                  }
-                }));
-                
-                setRealStudents(transformedStudents);
-              }
-              
-              setTeacherSection(null);
-            }
-          } else {
-            setTeacherSection(null);
-            setRealStudents([]);
-          }
+          // Teacher is not assigned to any section
+          console.log('Teacher is not assigned to any section');
+          setTeacherSection(null);
+          setRealStudents([]);
         }
         
       } catch (error) {
+        console.error('Error in fetchTeacherSectionAndStudents:', error);
+        setTeacherSection(null);
+        setRealStudents([]);
       } finally {
         setStudentsLoading(false);
       }
@@ -1602,15 +1551,81 @@ const SubjectModulePage = () => {
     fetchStudentsBasedOnRole();
   }, [userRole, userId]);
 
-  // Real-time subscription for student changes
+  // Real-time subscriptions for teacher section assignments and student changes
   useEffect(() => {
-    if (!userId) return;
+    if (!userId || userRole !== "teacher") return;
 
-    let subscription = null;
+    // Subscribe to changes in sections table (when teacher_id is updated)
+    const sectionsSubscription = supabase
+      .channel('teacher_sections_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'sections',
+          filter: `teacher_id=eq.${userId}`
+        },
+        (payload) => {
+          console.log('Teacher section assignment changed:', payload);
+          // Refresh teacher section and students data
+          fetchTeacherSectionAndStudents();
+        }
+      )
+      .subscribe((status) => {
+        console.log('Sections subscription status:', status);
+      });
 
-    if (String(userRole).toLowerCase() === 'teacher' && teacherSection) {
+    // Subscribe to changes in user_profiles table (when section_id is updated)
+    const profilesSubscription = supabase
+      .channel('teacher_profiles_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'user_profiles',
+          filter: `id=eq.${userId}`
+        },
+        (payload) => {
+          console.log('Teacher profile changed:', payload);
+          // Refresh teacher section and students data
+          fetchTeacherSectionAndStudents();
+        }
+      )
+      .subscribe((status) => {
+        console.log('Profiles subscription status:', status);
+      });
 
-      subscription = supabase
+    // Also subscribe to general sections table changes (for newly assigned sections)
+    const allSectionsSubscription = supabase
+      .channel('all_sections_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'sections'
+        },
+        (payload) => {
+          // Check if this update affects the current teacher
+          if (payload.new && payload.new.teacher_id === userId) {
+            console.log('Teacher got assigned to new section:', payload.new);
+            fetchTeacherSectionAndStudents();
+          } else if (payload.old && payload.old.teacher_id === userId && payload.new.teacher_id !== userId) {
+            console.log('Teacher got unassigned from section:', payload.old);
+            fetchTeacherSectionAndStudents();
+          }
+        }
+      )
+      .subscribe((status) => {
+        console.log('All sections subscription status:', status);
+      });
+
+    // Subscribe to student changes in teacher's section
+    let studentsSubscription = null;
+    if (teacherSection) {
+      studentsSubscription = supabase
         .channel('teacher_students_changes')
         .on(
           'postgres_changes',
@@ -1621,20 +1636,26 @@ const SubjectModulePage = () => {
             filter: `section_id=eq.${teacherSection.id}`
           },
           (payload) => {
+            console.log('Student changed in teacher section:', payload);
             // Re-trigger the students fetch
-            setStudentsLoading(true);
+            fetchTeacherSectionAndStudents();
           }
         )
         .subscribe((status) => {
+          console.log('Students subscription status:', status);
         });
     }
 
+    // Cleanup subscriptions on unmount
     return () => {
-      if (subscription) {
-        subscription.unsubscribe();
+      sectionsSubscription.unsubscribe();
+      profilesSubscription.unsubscribe();
+      allSectionsSubscription.unsubscribe();
+      if (studentsSubscription) {
+        studentsSubscription.unsubscribe();
       }
     };
-  }, [userRole, userId, teacherSection]);
+  }, [userRole, userId, teacherSection?.id]); // Include teacherSection.id to re-subscribe when section changes
 
   // Update student progress when modules are loaded
   useEffect(() => {
@@ -5987,7 +6008,9 @@ const SubjectModulePage = () => {
                     <p style={{ color: colors.mutedText, fontSize: '1.1rem' }}>
                       {studentsLoading 
                         ? String(userRole).toLowerCase() === 'teacher' 
-                          ? 'Loading students from your assigned section...' 
+                          ? teacherSection 
+                            ? `Loading students from section "${teacherSection.name}"...`
+                            : 'Checking your section assignment...'
                           : 'Loading students...'
                         : `Loading progress for ${subjectName}...`}
                     </p>
@@ -6004,12 +6027,48 @@ const SubjectModulePage = () => {
                       <h3 style={{ fontSize: '1.25rem', fontWeight: 600, margin: 0, color: colors.textColor }}>
                         {teacherSection ? 'No students in your section' : 'No section assigned'}
                       </h3>
-                      <p style={{ color: colors.mutedText }}>
+                      <p style={{ color: colors.mutedText, marginBottom: spacing.md }}>
                         {teacherSection 
-                          ? `There are no students assigned to your section "${teacherSection.name}" yet.`
-                          : 'You have not been assigned to a section yet. Please contact your administrator.'
+                          ? `There are no students assigned to your section "${teacherSection.name}" yet. Students may not have been enrolled in your section, or they may not be active.`
+                          : 'You have not been assigned to a section yet. Please contact your administrator to get assigned to a classroom section.'
                         }
                       </p>
+                      {!teacherSection && (
+                        <div style={{ 
+                          background: '#fef3c7', 
+                          border: '1px solid #f59e0b', 
+                          borderRadius: borderRadius.md, 
+                          padding: spacing.md, 
+                          maxWidth: '400px', 
+                          margin: '0 auto',
+                          textAlign: 'left'
+                        }}>
+                          <p style={{ color: '#92400e', fontSize: '0.875rem', margin: 0, fontWeight: 500 }}>
+                            <strong>What to do:</strong><br />
+                            • Contact your school administrator<br />
+                            • Ask to be assigned to a classroom section<br />
+                            • Once assigned, you'll see your students' progress here
+                          </p>
+                        </div>
+                      )}
+                      {teacherSection && (
+                        <div style={{ 
+                          background: '#dbeafe', 
+                          border: '1px solid #3b82f6', 
+                          borderRadius: borderRadius.md, 
+                          padding: spacing.md, 
+                          maxWidth: '400px', 
+                          margin: '0 auto',
+                          textAlign: 'left'
+                        }}>
+                          <p style={{ color: '#1e40af', fontSize: '0.875rem', margin: 0, fontWeight: 500 }}>
+                            <strong>Section Info:</strong><br />
+                            • Section: {teacherSection.name}<br />
+                            • Classroom: {teacherSection.classroom_number || 'Not specified'}<br />
+                            • Students will appear here once enrolled
+                          </p>
+                        </div>
+                      )}
                     </div>
                   ) : studentsToShow.length === 0 && String(userRole).toLowerCase() === 'parent' ? (
                     <div style={{ textAlign: 'center', padding: spacing['2xl'], background: colors.contentBg, borderRadius: borderRadius.xl, boxShadow: shadows.md }}>
