@@ -198,24 +198,9 @@ const VerificationPage = () => {
               )}
 
               <Form onSubmit={handleSubmit}>
-                <Form.Group className="mb-3">
-                  <Form.Label style={{ fontWeight: "600", color: "#152AC8" }}>
-                    Email Address
-                  </Form.Label>
-                  <Form.Control
-                    type="email"
-                    placeholder="Enter your email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    style={{
-                      padding: "12px",
-                      borderRadius: "15px",
-                      border: "1px solid #152AC8",
-                      backgroundColor: "rgba(21, 42, 200, 0.15)"
-                    }}
-                  />
-                </Form.Group>
+                  {/* Email input removed: email is expected to be provided from the previous step (Forgot Password)
+                      If email is not present in navigation state, resend/verify will remain disabled and the user
+                      should re-initiate the Forgot Password flow. */}
                 <Form.Group className="mb-3">
                   <Form.Label style={{ fontWeight: "600", color: "#152AC8" }}>
                     OTP Code
