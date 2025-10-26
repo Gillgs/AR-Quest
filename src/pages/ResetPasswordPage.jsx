@@ -10,6 +10,7 @@ const ResetPasswordPage = () => {
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -99,7 +100,7 @@ const ResetPasswordPage = () => {
                     New Password
                   </Form.Label>
                   <Form.Control
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     placeholder="Enter new password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
@@ -118,7 +119,7 @@ const ResetPasswordPage = () => {
                     Confirm New Password
                   </Form.Label>
                   <Form.Control
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     placeholder="Confirm new password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
@@ -129,6 +130,16 @@ const ResetPasswordPage = () => {
                       border: "1px solid #152AC8",
                       backgroundColor: "rgba(21, 42, 200, 0.15)"
                     }}
+                  />
+                </Form.Group>
+
+                <Form.Group className="mb-3 d-flex align-items-center">
+                  <Form.Check
+                    type="checkbox"
+                    id="show-password"
+                    label={<span style={{ fontWeight: 600, color: colors.primary }}>Show password</span>}
+                    checked={showPassword}
+                    onChange={(e) => setShowPassword(e.target.checked)}
                   />
                 </Form.Group>
 
