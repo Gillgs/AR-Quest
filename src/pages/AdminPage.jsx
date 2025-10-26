@@ -78,6 +78,11 @@ const AdminPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   // Separate search term for children list so we can have a second search box
   const [childSearchTerm, setChildSearchTerm] = useState('');
+  // Filter/sort options for each tab
+  const [parentFilter, setParentFilter] = useState('name-asc');
+  const [childFilter, setChildFilter] = useState('name-asc');
+  const [teacherFilter, setTeacherFilter] = useState('name-asc');
+  const [adminFilter, setAdminFilter] = useState('name-asc');
   const [showModal, setShowModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [modalAction, setModalAction] = useState({ type: '', data: null });
@@ -151,6 +156,9 @@ const AdminPage = () => {
     // clear any bulk selections when changing tabs
     setSelectedIds(new Set());
     setSelectAllOnPage(false);
+    // Reset search terms when switching tabs
+    setSearchTerm('');
+    setChildSearchTerm('');
   }, [activeTab]);
 
   // Mobile detection
@@ -279,38 +287,120 @@ const AdminPage = () => {
     }
   };
 
-  // Filter functions
-  const filteredStudents = students.filter(student => {
-    const activeSearch = activeTab === 'children' ? childSearchTerm : searchTerm;
-    const fullName = `${student.first_name || student.firstname || ''} ${student.middle_name || student.middlename || ''} ${student.last_name || student.lastname || ''}`.toLowerCase();
-    const parentName = `${student.parent_first_name || ''} ${student.parent_middle_name || ''} ${student.parent_last_name || ''}`.toLowerCase();
-    const email = (student.email || student.emailaddress || student.username || '').toLowerCase();
-    const studentId = String(student.student_id || '').toLowerCase();
-    const matchesSearch = fullName.includes(activeSearch.toLowerCase()) || parentName.includes(activeSearch.toLowerCase()) || email.includes(activeSearch.toLowerCase()) || studentId.includes(activeSearch.toLowerCase());
-    return matchesSearch;
-  });
+  // Helper function to apply sorting
+  const applySorting = (items, filterType, activeTab, studentsData = students) => {
+    const sorted = [...items];
+    
+    switch (filterType) {
+      case 'name-asc':
+        return sorted.sort((a, b) => {
+          const nameA = `${a.first_name || a.firstname || ''} ${a.last_name || a.lastname || ''}`.trim().toLowerCase();
+          const nameB = `${b.first_name || b.firstname || ''} ${b.last_name || b.lastname || ''}`.trim().toLowerCase();
+          return nameA.localeCompare(nameB);
+        });
+      case 'name-desc':
+        return sorted.sort((a, b) => {
+          const nameA = `${a.first_name || a.firstname || ''} ${a.last_name || a.lastname || ''}`.trim().toLowerCase();
+          const nameB = `${b.first_name || b.firstname || ''} ${b.last_name || b.lastname || ''}`.trim().toLowerCase();
+          return nameB.localeCompare(nameA);
+        });
+      case 'email-asc':
+        return sorted.sort((a, b) => {
+          const emailA = (a.email || a.emailaddress || a.username || '').toLowerCase();
+          const emailB = (b.email || b.emailaddress || b.username || '').toLowerCase();
+          return emailA.localeCompare(emailB);
+        });
+      case 'email-desc':
+        return sorted.sort((a, b) => {
+          const emailA = (a.email || a.emailaddress || a.username || '').toLowerCase();
+          const emailB = (b.email || b.emailaddress || b.username || '').toLowerCase();
+          return emailB.localeCompare(emailA);
+        });
+      case 'created-newest':
+        return sorted.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+      case 'created-oldest':
+        return sorted.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+      case 'children-most':
+        return sorted.sort((a, b) => {
+          const childrenA = studentsData.filter(s => s.parent_id === a.id).length;
+          const childrenB = studentsData.filter(s => s.parent_id === b.id).length;
+          return childrenB - childrenA;
+        });
+      case 'children-least':
+        return sorted.sort((a, b) => {
+          const childrenA = studentsData.filter(s => s.parent_id === a.id).length;
+          const childrenB = studentsData.filter(s => s.parent_id === b.id).length;
+          return childrenA - childrenB;
+        });
+      case 'students-most':
+        return sorted.sort((a, b) => (b.student_count || 0) - (a.student_count || 0));
+      case 'students-least':
+        return sorted.sort((a, b) => (a.student_count || 0) - (b.student_count || 0));
+      case 'student-id-asc':
+        return sorted.sort((a, b) => {
+          const idA = a.student_id || '';
+          const idB = b.student_id || '';
+          return idA.localeCompare(idB);
+        });
+      case 'student-id-desc':
+        return sorted.sort((a, b) => {
+          const idA = a.student_id || '';
+          const idB = b.student_id || '';
+          return idB.localeCompare(idA);
+        });
+      case 'enrollment-newest':
+        return sorted.sort((a, b) => new Date(b.enrollment_date || 0) - new Date(a.enrollment_date || 0));
+      case 'enrollment-oldest':
+        return sorted.sort((a, b) => new Date(a.enrollment_date || 0) - new Date(b.enrollment_date || 0));
+      case 'age-youngest':
+        return sorted.sort((a, b) => new Date(b.date_of_birth || 0) - new Date(a.date_of_birth || 0));
+      case 'age-oldest':
+        return sorted.sort((a, b) => new Date(a.date_of_birth || 0) - new Date(b.date_of_birth || 0));
+      default:
+        return sorted;
+    }
+  };
 
-  const filteredParents = parents.filter(parent => {
-    const name = `${parent.first_name || parent.firstname || ''} ${parent.last_name || parent.lastname || ''}`.toLowerCase();
-  const email = (parent.email || parent.emailaddress || parent.username || '').toLowerCase();
-    return name.includes(searchTerm.toLowerCase()) || email.includes(searchTerm.toLowerCase());
-  });
+  // Filter functions with sorting
+  const filteredStudents = React.useMemo(() => {
+    const filtered = students.filter(student => {
+      const activeSearch = activeTab === 'children' ? childSearchTerm : searchTerm;
+      const fullName = `${student.first_name || student.firstname || ''} ${student.middle_name || student.middlename || ''} ${student.last_name || student.lastname || ''}`.toLowerCase();
+      const parentName = `${student.parent_first_name || ''} ${student.parent_middle_name || ''} ${student.parent_last_name || ''}`.toLowerCase();
+      const email = (student.email || student.emailaddress || student.username || '').toLowerCase();
+      const studentId = String(student.student_id || '').toLowerCase();
+      const matchesSearch = fullName.includes(activeSearch.toLowerCase()) || parentName.includes(activeSearch.toLowerCase()) || email.includes(activeSearch.toLowerCase()) || studentId.includes(activeSearch.toLowerCase());
+      return matchesSearch;
+    });
+    return applySorting(filtered, childFilter, 'children', students);
+  }, [students, childSearchTerm, searchTerm, activeTab, childFilter]);
 
-  const filteredTeachers = teachers.filter(teacher =>
-    (() => {
+  const filteredParents = React.useMemo(() => {
+    const filtered = parents.filter(parent => {
+      const name = `${parent.first_name || parent.firstname || ''} ${parent.last_name || parent.lastname || ''}`.toLowerCase();
+      const email = (parent.email || parent.emailaddress || parent.username || '').toLowerCase();
+      return name.includes(searchTerm.toLowerCase()) || email.includes(searchTerm.toLowerCase());
+    });
+    return applySorting(filtered, parentFilter, 'parents', students);
+  }, [parents, searchTerm, parentFilter, students]);
+
+  const filteredTeachers = React.useMemo(() => {
+    const filtered = teachers.filter(teacher => {
       const name = `${teacher.first_name || teacher.firstname || ''} ${teacher.last_name || teacher.lastname || ''}`.toLowerCase();
-  const email = (teacher.email || teacher.emailaddress || teacher.username || '').toLowerCase();
+      const email = (teacher.email || teacher.emailaddress || teacher.username || '').toLowerCase();
       return name.includes(searchTerm.toLowerCase()) || email.includes(searchTerm.toLowerCase());
-    })()
-  );
+    });
+    return applySorting(filtered, teacherFilter, 'teachers', students);
+  }, [teachers, searchTerm, teacherFilter, students]);
 
-  const filteredAdmins = admins.filter(admin =>
-    (() => {
+  const filteredAdmins = React.useMemo(() => {
+    const filtered = admins.filter(admin => {
       const name = `${admin.first_name || admin.firstname || ''} ${admin.last_name || admin.lastname || ''}`.toLowerCase();
-  const email = (admin.email || admin.emailaddress || admin.username || '').toLowerCase();
+      const email = (admin.email || admin.emailaddress || admin.username || '').toLowerCase();
       return name.includes(searchTerm.toLowerCase()) || email.includes(searchTerm.toLowerCase());
-    })()
-  );
+    });
+    return applySorting(filtered, adminFilter, 'admins', students);
+  }, [admins, searchTerm, adminFilter, students]);
 
 
 
@@ -617,8 +707,38 @@ const handleFormSubmit = async (formData) => {
 
         authData = signUpResponse;
         console.log('authData set for new teacher:', authData);
+      } else if (activeTab === 'parents') {
+        // For parents use the admin client to create and auto-confirm the account
+        if (!supabaseAdmin) {
+          showAlertMessage('danger', 'Admin operations not available. Please check environment configuration.');
+          return;
+        }
+        const { data: parentCreateResp, error: parentCreateErr } = await supabaseAdmin.auth.admin.createUser({
+          email: formData.emailaddress,
+          password: formData.password,
+          email_confirm: true, // auto-confirm parent accounts so they don't need to verify by email
+          user_metadata: { role: 'parent', first_name: formData.firstname, last_name: formData.lastname }
+        });
+
+        console.log('supabaseAdmin.auth.admin.createUser response:', { parentCreateResp, parentCreateErr });
+        if (parentCreateErr) {
+          const msg = parentCreateErr.message || String(parentCreateErr);
+          if (msg.includes('already registered') || msg.includes('duplicate')) {
+            showAlertMessage('danger', 'This email is already registered. Please use another email.');
+            return;
+          }
+          showAlertMessage('danger', 'Registration failed: ' + msg);
+          return;
+        }
+
+        const createdUser = parentCreateResp?.user ?? parentCreateResp;
+        if (!createdUser || !createdUser.id) {
+          showAlertMessage('danger', 'Registration failed: No valid user id returned');
+          return;
+        }
+        authData = { user: createdUser };
       } else {
-        // For students (parents), use admin client
+        // For students (children), use admin client
         if (!supabaseAdmin) {
           showAlertMessage('danger', 'Admin operations not available. Please check environment configuration.');
           return;
@@ -713,7 +833,7 @@ const handleFormSubmit = async (formData) => {
     }
 
     // Handle user creation/editing based on type
-    if (activeTab === 'admins' || activeTab === 'teachers') {
+    if (activeTab === 'admins' || activeTab === 'teachers' || activeTab === 'parents') {
       if (modalAction.type === 'create') {
         // Create new teacher/admin profile
         const profileData = {
@@ -724,7 +844,7 @@ const handleFormSubmit = async (formData) => {
           username: formData.emailaddress.split('@')[0],
           email: formData.emailaddress?.trim() || null,
           contact: formData.contactnumber?.trim() || null,
-          role: activeTab === 'admins' ? 'admin' : 'teacher',
+          role: activeTab === 'admins' ? 'admin' : activeTab === 'teachers' ? 'teacher' : 'parent',
           is_active: true
           // Note: contact_number is not stored in user_profiles table
           // created_at and updated_at are handled by database defaults
@@ -763,8 +883,51 @@ const handleFormSubmit = async (formData) => {
           }
         }
 
+        // Create child record if this is a parent account with child information
+        if (activeTab === 'parents' && formData.childfirstname && formData.childlastname) {
+          // Generate next student ID
+          const { data: maxStudent, error: maxStudentError } = await supabaseAdmin
+            .from('students')
+            .select('student_id')
+            .order('student_id', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (maxStudentError) throw maxStudentError;
+          
+          let nextNumber = 1;
+          if (maxStudent && maxStudent.student_id) {
+            const match = maxStudent.student_id.match(/STU(\d{3})/);
+            if (match) nextNumber = parseInt(match[1], 10) + 1;
+          }
+          const studentId = `STU${String(nextNumber).padStart(3, '0')}`;
+          
+          // Create student record
+          const today = new Date();
+          const childBirthDate = formData.childbirthdate ? new Date(formData.childbirthdate) : null;
+          const childEnrollmentDate = formData.childenrollmentdate ? new Date(formData.childenrollmentdate) : today;
+          
+          const studentProfile = {
+            id: crypto.randomUUID(),
+            parent_id: authData.user.id,
+            first_name: formData.childfirstname.trim(),
+            middle_name: formData.childmiddlename?.trim() || null,
+            last_name: formData.childlastname.trim(),
+            date_of_birth: childBirthDate ? childBirthDate.toISOString().split('T')[0] : null,
+            student_id: studentId,
+            enrollment_date: childEnrollmentDate.toISOString().split('T')[0],
+            created_at: today.toISOString(),
+          };
+          
+          const { error: studentError } = await supabaseAdmin
+            .from('students')
+            .insert([studentProfile]);
+          
+          if (studentError) throw new Error('Failed to create student record: ' + studentError.message);
+        }
+
         // Teachers: their signup via `supabase.auth.signUp()` will already trigger the confirmation email.
         // Admins: created with the admin client and auto-confirmed; no email is required.
+        // Parents: created with the admin client and auto-confirmed; their child is also created.
         // No extra OTP email is sent here to avoid hitting Supabase rate limits.
         showAlertMessage('success', `${activeTab.slice(0, -1)} created successfully.`);
       } catch (error) {
@@ -2741,23 +2904,37 @@ const handleFormSubmit = async (formData) => {
                   </p>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: isMobile ? '8px' : '12px', alignItems: 'center', width: isMobile ? '100%' : 'auto' }}>
+              <div style={{ display: 'flex', gap: isMobile ? '8px' : '12px', alignItems: 'center', width: isMobile ? '100%' : 'auto', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                 {activeTab === 'children' ? (
-                  <div style={{ flex: isMobile ? '1 1 auto' : '0 0 320px' }}>
-                    <InputGroup size="sm">
-                      <Form.Control
-                        placeholder="Search students..."
-                        value={childSearchTerm}
-                        onChange={(e) => setChildSearchTerm(e.target.value)}
-                      />
-                      <InputGroup.Text>
-                        <FiSearch />
-                      </InputGroup.Text>
-                    </InputGroup>
-                  </div>
+                  <>
+                    <div style={{ flex: isMobile ? '1 1 auto' : '0 0 250px' }}>
+                      <InputGroup size="sm">
+                        <Form.Control
+                          placeholder="Search students..."
+                          value={childSearchTerm}
+                          onChange={(e) => setChildSearchTerm(e.target.value)}
+                        />
+                        <InputGroup.Text>
+                          <FiSearch />
+                        </InputGroup.Text>
+                      </InputGroup>
+                    </div>
+                    <div style={{ flex: isMobile ? '1 1 auto' : '0 0 180px' }}>
+                      <Form.Select size="sm" value={childFilter} onChange={(e) => setChildFilter(e.target.value)} style={{ fontSize: '0.85rem' }}>
+                        <option value="name-asc">Name A-Z</option>
+                        <option value="name-desc">Name Z-A</option>
+                        <option value="student-id-asc">Student ID ↑</option>
+                        <option value="student-id-desc">Student ID ↓</option>
+                        <option value="enrollment-newest">Newest Enrolled</option>
+                        <option value="enrollment-oldest">Oldest Enrolled</option>
+                        <option value="age-youngest">Youngest</option>
+                        <option value="age-oldest">Oldest</option>
+                      </Form.Select>
+                    </div>
+                  </>
                 ) : (
                   <>
-                    <div style={{ flex: isMobile ? '1 1 auto' : '0 0 320px' }}>
+                    <div style={{ flex: isMobile ? '1 1 auto' : '0 0 250px' }}>
                       <InputGroup size="sm">
                         <Form.Control
                           placeholder="Search..."
@@ -2769,7 +2946,52 @@ const handleFormSubmit = async (formData) => {
                         </InputGroup.Text>
                       </InputGroup>
                     </div>
-                    {activeTab !== 'children' && (
+                    <div style={{ flex: isMobile ? '1 1 auto' : '0 0 180px' }}>
+                      <Form.Select 
+                        size="sm" 
+                        value={activeTab === 'parents' ? parentFilter : activeTab === 'teachers' ? teacherFilter : adminFilter} 
+                        onChange={(e) => {
+                          if (activeTab === 'parents') setParentFilter(e.target.value);
+                          else if (activeTab === 'teachers') setTeacherFilter(e.target.value);
+                          else setAdminFilter(e.target.value);
+                        }}
+                        style={{ fontSize: '0.85rem' }}
+                      >
+                        <option value="name-asc">Name A-Z</option>
+                        <option value="name-desc">Name Z-A</option>
+                        <option value="email-asc">Email A-Z</option>
+                        <option value="email-desc">Email Z-A</option>
+                        <option value="created-newest">Newest Added</option>
+                        <option value="created-oldest">Oldest Added</option>
+                        {activeTab === 'parents' && <option value="children-most">Most Children</option>}
+                        {activeTab === 'parents' && <option value="children-least">Least Children</option>}
+                        {activeTab === 'teachers' && <option value="students-most">Most Students</option>}
+                        {activeTab === 'teachers' && <option value="students-least">Least Students</option>}
+                      </Form.Select>
+                    </div>
+                    {activeTab === 'parents' && (
+                      <Button
+                        variant="outline-primary"
+                        size="sm"
+                        onClick={() => handleShowModal('create')}
+                        className={isMobile ? 'w-100' : ''}
+                      >
+                        <FiPlus size={14} className="me-1" />
+                        CREATE ACCOUNT
+                      </Button>
+                    )}
+                    {activeTab === 'teachers' && (
+                      <Button
+                        variant="outline-primary"
+                        size="sm"
+                        onClick={() => handleShowModal('create')}
+                        className={isMobile ? 'w-100' : ''}
+                      >
+                        <FiPlus size={14} className="me-1" />
+                        CREATE ACCOUNT
+                      </Button>
+                    )}
+                    {activeTab === 'admins' && (
                       <Button
                         variant="outline-primary"
                         size="sm"
@@ -3968,6 +4190,12 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
     parentfirstname: '',
     parentmiddlename: '',
     parentlastname: '',
+    childfirstname: '',
+    childmiddlename: '',
+    childlastname: '',
+    childbirthdate: '',
+    childenrollmentdate: '',
+    childstudentid: '',
     profile_picture_url: '',
     section_id: '',
     is_active: true,
@@ -4017,11 +4245,12 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
       if (data.parent.contact) normalized.contactnumber = data.parent.contact;
     }
     
-    // Handle direct parent editing - map their own names to parent fields
+    // Handle direct parent editing - ensure names are in the regular fields (not parent fields)
     if (data.role === 'parent') {
-      if (data.first_name || normalized.firstname) normalized.parentfirstname = data.first_name || normalized.firstname;
-      if (data.last_name || normalized.lastname) normalized.parentlastname = data.last_name || normalized.lastname;
-      if (data.middle_name || normalized.middlename) normalized.parentmiddlename = data.middle_name || normalized.middlename;
+      // Make sure the regular name fields have the parent's data
+      if (data.first_name && !normalized.firstname) normalized.firstname = data.first_name;
+      if (data.last_name && !normalized.lastname) normalized.lastname = data.last_name;
+      if (data.middle_name && !normalized.middlename) normalized.middlename = data.middle_name;
       // Don't override email if it's already set from username mapping above
       if (!normalized.emailaddress && (data.username || data.email)) {
         normalized.emailaddress = data.username || data.email;
@@ -4060,6 +4289,12 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
       // if (new Date(cloned.enrollment_date) < new Date(cloned.birthdate)) return false;
       // if (cloned.enrollment_date > today) return false;
     }
+    if (type === 'parents') {
+      if (!cloned.childfirstname?.toString().trim()) return false;
+      if (!cloned.childlastname?.toString().trim()) return false;
+      if (!cloned.childbirthdate) return false;
+      if (!cloned.childenrollmentdate) return false;
+    }
     if (isCreating) {
       if (!cloned.emailaddress?.toString().trim()) return false;
       if (!cloned.password?.toString()) return false;
@@ -4094,6 +4329,9 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
     if (type === 'students') {
       requiredFields.push('birthdate', 'enrollment_date');
     }
+    if (type === 'parents') {
+      requiredFields.push('childfirstname', 'childlastname', 'childbirthdate', 'childenrollmentdate');
+    }
     requiredFields.push('emailaddress', 'password');
     // Contact number is optional since it's not stored in user_profiles table
     if (type === 'students') {
@@ -4102,9 +4340,13 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
 
     requiredFields.forEach(field => {
       if (!formData[field]?.toString().trim()) {
-        newErrors[field] = field.includes('parent') ?
-          `Parent's ${field.replace('parent', '').toLowerCase()} is required` :
-          `${field === 'birthdate' ? 'Birth date' : field.charAt(0).toUpperCase() + field.slice(1).replace(/([A-Z])/g, ' $1').toLowerCase()} is required`;
+        if (field.includes('parent')) {
+          newErrors[field] = `Parent's ${field.replace('parent', '').toLowerCase()} is required`;
+        } else if (field.includes('child')) {
+          newErrors[field] = `Child's ${field.replace('child', '').toLowerCase()} is required`;
+        } else {
+          newErrors[field] = `${field === 'birthdate' ? 'Birth date' : field.charAt(0).toUpperCase() + field.slice(1).replace(/([A-Z])/g, ' $1').toLowerCase()} is required`;
+        }
       }
     });
 
@@ -4138,6 +4380,32 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
       }
     }
 
+    // Date checks for children when creating parents
+    if (type === 'parents') {
+      const todayDate = new Date();
+      todayDate.setHours(0,0,0,0);
+
+      if (formData.childbirthdate) {
+        const dob = new Date(formData.childbirthdate);
+        dob.setHours(0,0,0,0);
+        if (isNaN(dob.getTime())) newErrors.childbirthdate = 'Invalid birth date';
+        else if (dob.getTime() > todayDate.getTime()) newErrors.childbirthdate = 'Birth date cannot be in the future';
+      }
+
+      if (formData.childenrollmentdate) {
+        const enroll = new Date(formData.childenrollmentdate);
+        enroll.setHours(0,0,0,0);
+        if (isNaN(enroll.getTime())) newErrors.childenrollmentdate = 'Invalid enrollment date';
+        else if (formData.childbirthdate) {
+          const dob = new Date(formData.childbirthdate);
+          dob.setHours(0,0,0,0);
+          if (enroll.getTime() < dob.getTime()) newErrors.childenrollmentdate = 'Enrollment date cannot be before birth date';
+        }
+        // Allow enrollment date equal to today (not strictly greater)
+        else if (enroll.getTime() > todayDate.getTime()) newErrors.childenrollmentdate = 'Enrollment date cannot be in the future';
+      }
+    }
+
     if (formData.password) {
       if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters';
     }
@@ -4153,29 +4421,8 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
   // Keep middlename in the submission so student middle names are persisted
   const submissionData = { ...formData };
       
-      // For parent editing, map parent fields back to user fields
-      if (data?.role === 'parent' && !isCreating) {
-        submissionData.firstname = submissionData.parentfirstname;
-        submissionData.lastname = submissionData.parentlastname;
-        // Map parent middle name and contact number into top-level fields
-        if (submissionData.parentmiddlename !== undefined) {
-          // set both `middlename` (form-style) and `middle_name` (db-style) so
-          // downstream handlers/readers accept either key
-          submissionData.middlename = submissionData.parentmiddlename || '';
-          submissionData.middle_name = submissionData.middlename || null;
-        }
-        if (submissionData.contactnumber !== undefined) {
-          submissionData.contact = submissionData.contactnumber || null;
-        }
-        if (submissionData.parentemailaddress !== undefined) {
-          submissionData.emailaddress = submissionData.parentemailaddress || submissionData.emailaddress || null;
-        }
-        // Remove parent-only fields as they're not part of the user_profiles table
-        delete submissionData.parentfirstname;
-        delete submissionData.parentlastname;
-        delete submissionData.parentmiddlename;
-        delete submissionData.parentemailaddress;
-      }
+      // For parent editing, the firstname, middlename, lastname fields are already in the right format
+      // No need to map from parent fields since we're using the regular name fields now
         // Before submitting, ensure the email isn't already in use (prevent duplicate)
         if (modalAction.type === 'create' || modalAction.type === 'edit') {
           const emailVal = (submissionData.emailaddress || '').toString().trim().toLowerCase();
@@ -4234,21 +4481,20 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
       <div style={{ padding: isMobile ? '0' : '20px' }}>
         <Form onSubmit={handleSubmit} className="modern-form">
           <div style={{ maxWidth: isMobile ? '100%' : 760, margin: '0 auto', width: '100%' }}>
-            {/* User Information Section - Hide when editing parents */}
-            {!(data?.role === 'parent' && !isCreating) && (
-              <div className="form-section">
-                <div className="section-header">
-                  <div className="section-icon">
-                    <FiUser size={20} />
-                  </div>
-                  <h6>{type === 'students' ? 'Student' : type === 'teachers' ? 'Teacher' : data?.role === 'parent' ? 'Parent' : 'Admin'} Information</h6>
+            {/* User Information Section */}
+            <div className="form-section">
+              <div className="section-header">
+                <div className="section-icon">
+                  <FiUser size={20} />
                 </div>
+                <h6>{type === 'students' ? 'Student' : type === 'teachers' ? 'Teacher' : type === 'parents' ? 'Parent' : data?.role === 'parent' ? 'Parent' : 'Admin'} Information</h6>
+              </div>
             <div className="section-content">
-              <Row className="g-1">
+              <Row className="g-2" style={{ marginBottom: '0.25rem' }}>
                 <Col xs={12} md={4}>
                   <Form.Group className="form-group">
                     <Form.Label>
-                      {type === 'students' ? "Student's First Name" : "First Name"} <span className="required">*</span>
+                      {type === 'students' ? "Student's First Name" : type === 'parents' ? "Parent's First Name" : "First Name"} <span className="required">*</span>
                     </Form.Label>
                     <Form.Control
                       type="text"
@@ -4257,7 +4503,7 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
                       onChange={handleInputChange}
                       isInvalid={!!errors.firstname}
                       className="form-control-modern"
-                      placeholder={type === 'students' ? "Enter student's first name" : "First name"}
+                      placeholder={type === 'students' ? "Enter student's first name" : type === 'parents' ? "Enter parent's first name" : "First name"}
                     />
                     <Form.Control.Feedback type="invalid">
                       {errors.firstname}
@@ -4266,21 +4512,21 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
                 </Col>
                 <Col xs={12} md={4}>
                   <Form.Group className="form-group">
-                    <Form.Label>{type === 'students' ? "Student's Middle Name" : "Middle Name"}</Form.Label>
+                    <Form.Label>{type === 'students' ? "Student's Middle Name" : type === 'parents' ? "Parent's Middle Name" : "Middle Name"}</Form.Label>
                     <Form.Control
                       type="text"
                       name="middlename"
                       value={formData.middlename !== undefined ? formData.middlename : ""}
                       onChange={handleInputChange}
                       className="form-control-modern"
-                      placeholder={type === 'students' ? "Enter student's middle name (optional)" : "Middle name (optional)"}
+                      placeholder={type === 'students' ? "Enter student's middle name (optional)" : type === 'parents' ? "Enter parent's middle name (optional)" : "Middle name (optional)"}
                     />
                   </Form.Group>
                 </Col>
                 <Col xs={12} md={4}>
                   <Form.Group className="form-group">
                     <Form.Label>
-                      {type === 'students' ? "Student's Last Name" : "Last Name"} <span className="required">*</span>
+                      {type === 'students' ? "Student's Last Name" : type === 'parents' ? "Parent's Last Name" : "Last Name"} <span className="required">*</span>
                     </Form.Label>
                     <Form.Control
                       type="text"
@@ -4289,7 +4535,7 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
                       onChange={handleInputChange}
                       isInvalid={!!errors.lastname}
                       className="form-control-modern"
-                      placeholder={type === 'students' ? "Enter student's last name" : "Last name"}
+                      placeholder={type === 'students' ? "Enter student's last name" : type === 'parents' ? "Enter parent's last name" : "Last name"}
                     />
                     <Form.Control.Feedback type="invalid">
                       {errors.lastname}
@@ -4331,32 +4577,144 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
                     </Col>
                   </>
                 )}
-                <Col xs={12} md={4}>
-                  <Form.Group className="form-group">
-                    <Form.Label>
-                      {type === 'students' ? 'Student ID' : type === 'teachers' ? 'Teacher ID' : 'Admin ID'}
-                    </Form.Label>
-                    <Form.Control
-                      type="text"
-                      name={type === 'students' ? 'student_id' : type === 'teachers' ? 'teacher_id' : 'admin_id'}
-                      value={type === 'students'
-                        ? (formData.student_id !== undefined ? formData.student_id : "(auto-generated)")
-                        : type === 'teachers'
-                          ? (formData.teacher_id !== undefined ? formData.teacher_id : "(auto-generated)")
-                          : (formData.admin_id !== undefined ? formData.admin_id : "(auto-generated)")}
-                      readOnly
-                      disabled
-                      tabIndex="-1"
-                      style={{ userSelect: 'none', cursor: 'not-allowed' }}
-                      className="form-control-modern bg-light"
-                    />
-                  </Form.Group>
-                </Col>
+                {type !== 'parents' && (
+                  <Col xs={12} md={4}>
+                    <Form.Group className="form-group">
+                      <Form.Label>
+                        {type === 'students' ? 'Student ID' : type === 'teachers' ? 'Teacher ID' : 'Admin ID'}
+                      </Form.Label>
+                      <Form.Control
+                        type="text"
+                        name={type === 'students' ? 'student_id' : type === 'teachers' ? 'teacher_id' : 'admin_id'}
+                        value={type === 'students'
+                          ? (formData.student_id !== undefined ? formData.student_id : "(auto-generated)")
+                          : type === 'teachers'
+                            ? (formData.teacher_id !== undefined ? formData.teacher_id : "(auto-generated)")
+                            : (formData.admin_id !== undefined ? formData.admin_id : "(auto-generated)")}
+                        readOnly
+                        disabled
+                        tabIndex="-1"
+                        style={{ userSelect: 'none', cursor: 'not-allowed' }}
+                        className="form-control-modern bg-light"
+                      />
+                    </Form.Group>
+                  </Col>
+                )}
               </Row>
               </div>
             </div>
-            )}
 
+          {/* Child Information for Parents */}
+          {type === 'parents' && isCreating && (
+            <div className="form-section">
+              <div className="section-header">
+                <div className="section-icon">
+                  <FiUser size={20} />
+                </div>
+                <h6>Child Information</h6>
+              </div>
+              <div className="section-content">
+                <Row className="g-2" style={{ marginBottom: '0.25rem' }}>
+                  <Col xs={12} md={4}>
+                    <Form.Group className="form-group">
+                      <Form.Label>
+                        Child's First Name <span className="required">*</span>
+                      </Form.Label>
+                      <Form.Control
+                        type="text"
+                        name="childfirstname"
+                        value={formData.childfirstname !== undefined ? formData.childfirstname : ""}
+                        onChange={handleInputChange}
+                        isInvalid={!!errors.childfirstname}
+                        className="form-control-modern"
+                        placeholder="Enter child's first name"
+                      />
+                      <Form.Control.Feedback type="invalid">
+                        {errors.childfirstname}
+                      </Form.Control.Feedback>
+                    </Form.Group>
+                  </Col>
+                  <Col xs={12} md={4}>
+                    <Form.Group className="form-group">
+                      <Form.Label>Child's Middle Name</Form.Label>
+                      <Form.Control
+                        type="text"
+                        name="childmiddlename"
+                        value={formData.childmiddlename !== undefined ? formData.childmiddlename : ""}
+                        onChange={handleInputChange}
+                        className="form-control-modern"
+                        placeholder="Enter child's middle name (optional)"
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col xs={12} md={4}>
+                    <Form.Group className="form-group">
+                      <Form.Label>
+                        Child's Last Name <span className="required">*</span>
+                      </Form.Label>
+                      <Form.Control
+                        type="text"
+                        name="childlastname"
+                        value={formData.childlastname !== undefined ? formData.childlastname : ""}
+                        onChange={handleInputChange}
+                        isInvalid={!!errors.childlastname}
+                        className="form-control-modern"
+                        placeholder="Enter child's last name"
+                      />
+                      <Form.Control.Feedback type="invalid">
+                        {errors.childlastname}
+                      </Form.Control.Feedback>
+                    </Form.Group>
+                  </Col>
+                </Row>
+                <Row className="g-2" style={{ marginBottom: '0.25rem' }}>
+                  <Col xs={12} md={4}>
+                    <Form.Group className="form-group">
+                      <Form.Label>Child's Birth Date <span className="required">*</span></Form.Label>
+                      <Form.Control
+                        type="date"
+                        name="childbirthdate"
+                        value={formData.childbirthdate || ''}
+                        onChange={handleInputChange}
+                        className="form-control-modern"
+                        isInvalid={!!errors.childbirthdate}
+                      />
+                      <Form.Control.Feedback type="invalid">{errors.childbirthdate}</Form.Control.Feedback>
+                    </Form.Group>
+                  </Col>
+                  <Col xs={12} md={4}>
+                    <Form.Group className="form-group">
+                      <Form.Label>Child's Enrollment Date <span className="required">*</span></Form.Label>
+                      <Form.Control
+                        type="date"
+                        name="childenrollmentdate"
+                        value={formData.childenrollmentdate || ''}
+                        onChange={handleInputChange}
+                        className="form-control-modern"
+                        isInvalid={!!errors.childenrollmentdate}
+                      />
+                      <Form.Control.Feedback type="invalid">{errors.childenrollmentdate}</Form.Control.Feedback>
+                    </Form.Group>
+                  </Col>
+                  <Col xs={12} md={4}>
+                    <Form.Group className="form-group">
+                      <Form.Label>Student ID</Form.Label>
+                      <Form.Control
+                        type="text"
+                        name="childstudentid"
+                        value="(auto-generated)"
+                        readOnly
+                        disabled
+                        tabIndex="-1"
+                        style={{ userSelect: 'none', cursor: 'not-allowed' }}
+                        className="form-control-modern bg-light"
+                      />
+                    </Form.Group>
+                  </Col>
+                </Row>
+              </div>
+            </div>
+          )}
 
           {/* Parent Information for Students */}
           {type === 'students' && (
@@ -4433,7 +4791,7 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
               </div>
               <h6>Contact Information</h6>
             </div>        <div className="section-content">
-              <Row className="g-1 align-items-start">
+              <Row className="g-2 align-items-start" style={{ marginBottom: '0.25rem' }}>
                 {/* Email Address Field */}
                 <Col xs={12} md={6}>
                   <Form.Group className="form-group">
@@ -4492,7 +4850,7 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
               <h6>Security</h6>
             </div>
             <div className="section-content">
-              <Row className="g-1">
+              <Row className="g-2" style={{ marginBottom: '0.25rem' }}>
                 <Col xs={12} md={6}>
                   <Form.Group className="form-group">
                     <Form.Label>
@@ -4591,7 +4949,7 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
           max-width: 100%;
         }
         :global(.form-section) {
-          margin-bottom: 0.45rem;
+          margin-bottom: 0.75rem;
           border-radius: 8px;
           background-color: white;
           overflow: visible;
@@ -4633,12 +4991,12 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
         }
         
         :global(.section-content) {
-          padding: 0.2rem 0.4rem;
+          padding: 0.5rem 0.75rem;
           background-color: white;
         }
         
         :global(.form-group) {
-          margin-bottom: 0.15rem;
+          margin-bottom: 0.5rem;
         }
         
         :global(.form-control-modern) {
