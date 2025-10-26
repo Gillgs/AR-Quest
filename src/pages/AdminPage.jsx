@@ -708,21 +708,23 @@ const handleFormSubmit = async (formData) => {
         authData = signUpResponse;
         console.log('authData set for new teacher:', authData);
       } else if (activeTab === 'parents') {
-        // For parents use the admin client to create and auto-confirm the account
-        if (!supabaseAdmin) {
-          showAlertMessage('danger', 'Admin operations not available. Please check environment configuration.');
-          return;
-        }
-        const { data: parentCreateResp, error: parentCreateErr } = await supabaseAdmin.auth.admin.createUser({
+        // For parents use the regular signup flow which sends email verification
+        const { data: signUpResponse, error: signUpError } = await supabase.auth.signUp({
           email: formData.emailaddress,
           password: formData.password,
-          email_confirm: true, // auto-confirm parent accounts so they don't need to verify by email
-          user_metadata: { role: 'parent', first_name: formData.firstname, last_name: formData.lastname }
+          options: {
+            data: {
+              role: 'parent',
+              first_name: formData.firstname,
+              last_name: formData.lastname
+            },
+            emailRedirectTo: `${window.location.origin}/login`
+          }
         });
 
-        console.log('supabaseAdmin.auth.admin.createUser response:', { parentCreateResp, parentCreateErr });
-        if (parentCreateErr) {
-          const msg = parentCreateErr.message || String(parentCreateErr);
+        console.log('supabase.auth.signUp response for parent:', { signUpResponse, signUpError });
+        if (signUpError) {
+          const msg = signUpError.message || String(signUpError);
           if (msg.includes('already registered') || msg.includes('duplicate')) {
             showAlertMessage('danger', 'This email is already registered. Please use another email.');
             return;
@@ -731,12 +733,14 @@ const handleFormSubmit = async (formData) => {
           return;
         }
 
-        const createdUser = parentCreateResp?.user ?? parentCreateResp;
-        if (!createdUser || !createdUser.id) {
-          showAlertMessage('danger', 'Registration failed: No valid user id returned');
+        // For parents using signup flow, the user might not be immediately available
+        if (!signUpResponse || !signUpResponse.user) {
+          showAlertMessage('danger', 'Registration failed: No user data returned');
           return;
         }
-        authData = { user: createdUser };
+        
+        authData = signUpResponse;
+        console.log('authData set for new parent:', authData);
       } else {
         // For students (children), use admin client
         if (!supabaseAdmin) {
@@ -927,7 +931,7 @@ const handleFormSubmit = async (formData) => {
 
         // Teachers: their signup via `supabase.auth.signUp()` will already trigger the confirmation email.
         // Admins: created with the admin client and auto-confirmed; no email is required.
-        // Parents: created with the admin client and auto-confirmed; their child is also created.
+        // Parents: their signup via `supabase.auth.signUp()` will trigger the confirmation email; their child is also created.
         // No extra OTP email is sent here to avoid hitting Supabase rate limits.
         showAlertMessage('success', `${activeTab.slice(0, -1)} created successfully.`);
       } catch (error) {
@@ -1128,7 +1132,9 @@ const handleFormSubmit = async (formData) => {
             ? 'Parent can now login with their email and password.' 
             : activeTab === 'admins'  
               ? 'Admin account is ready for immediate use.'
-              : 'Confirmation email sent! Please check your email to verify your account before logging in.'
+              : activeTab === 'parents'
+                ? 'Verification email sent! Please check your email to confirm your account before logging in.'
+                : 'Confirmation email sent! Please check your email to verify your account before logging in.'
         }`
       : `${activeTab.slice(0, -1)} updated successfully!`;
     
