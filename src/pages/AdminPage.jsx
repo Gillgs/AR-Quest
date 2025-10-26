@@ -182,8 +182,8 @@ const AdminPage = () => {
         .order('created_at', { ascending: false });
       if (userError) throw userError;
       setParents([...allUsers.filter(u => u.role === 'parent')]);
-      setTeachers([...allUsers.filter(u => u.role === 'teacher')]);
       setAdmins([...allUsers.filter(u => u.role === 'admin')]);
+      
       // Update parentCount so the stats card reflects changes (deletes/creates)
       try {
         const computedParentCount = (allUsers || []).filter(u => u.role === 'parent').length;
@@ -192,7 +192,23 @@ const AdminPage = () => {
         // ignore errors computing count
       }
 
-      // Fetch all students with parent information
+      // Fetch sections to get teacher-section relationships
+      const { data: sectionsData, error: sectionsError } = await supabaseAdmin
+        .from('sections')
+        .select(`
+          id,
+          name,
+          teacher_id,
+          classroom_number,
+          time_period,
+          max_students,
+          school_year,
+          is_active
+        `)
+        .eq('is_active', true);
+      if (sectionsError) throw sectionsError;
+
+      // Fetch all students with parent and section information
       const { data: allStudents, error: studentError } = await supabaseAdmin
         .from('students')
         .select(`
@@ -205,21 +221,57 @@ const AdminPage = () => {
             username,
             email,
             contact
+          ),
+          section:sections!section_id(
+            id,
+            name,
+            teacher_id,
+            user_profiles!teacher_id(
+              id,
+              first_name,
+              middle_name,
+              last_name,
+              email
+            )
           )
         `);
       if (studentError) throw studentError;
       
-      // Flatten parent data into student records for easier access
-      const studentsWithParentInfo = allStudents?.map(student => ({
+      // Flatten parent and teacher data into student records for easier access
+      const studentsWithInfo = allStudents?.map(student => ({
         ...student,
-  parent_first_name: student.parent?.first_name || '',
-  parent_middle_name: student.parent?.middle_name || '',
-  parent_last_name: student.parent?.last_name || '',
+        parent_first_name: student.parent?.first_name || '',
+        parent_middle_name: student.parent?.middle_name || '',
+        parent_last_name: student.parent?.last_name || '',
         parent_email: student.parent?.email || student.parent?.username || '',
-        parent_contact: student.parent?.contact || student.parent?.contact_number || ''
+        parent_contact: student.parent?.contact || student.parent?.contact_number || '',
+        section_name: student.section?.name || '',
+        teacher_name: student.section?.user_profiles 
+          ? `${student.section.user_profiles.first_name || ''} ${student.section.user_profiles.last_name || ''}`.trim()
+          : ''
       })) || [];
       
-      setStudents(studentsWithParentInfo);
+      setStudents(studentsWithInfo);
+
+      // Process teachers with student counts
+      const teacherUsers = allUsers.filter(u => u.role === 'teacher');
+      const teachersWithCounts = teacherUsers.map(teacher => {
+        // Find section assigned to this teacher
+        const assignedSection = sectionsData?.find(section => section.teacher_id === teacher.id);
+        
+        // Count students in this teacher's section
+        const studentCount = studentsWithInfo.filter(student => 
+          student.section_id === assignedSection?.id
+        ).length;
+
+        return {
+          ...teacher,
+          assigned_section: assignedSection?.name || null,
+          student_count: studentCount
+        };
+      });
+      
+      setTeachers(teachersWithCounts);
     } catch (error) {
       showAlertMessage('danger', 'Failed to fetch users: ' + error.message);
     } finally {
@@ -1323,54 +1375,96 @@ const handleFormSubmit = async (formData) => {
       let filename = `export_${activeTab}_${new Date().toISOString().slice(0,10)}.csv`;
 
       if (activeTab === 'children') {
-        // For children, get data from students table with parent information
+        // For children, match the table columns exactly
         const selectedStudents = students.filter(student => ids.includes(student.id));
-        rows = selectedStudents;
-        headers = ['student_id', 'first_name', 'middle_name', 'last_name', 'parent_name', 'date_of_birth', 'enrollment_date', 'parent_email', 'parent_contact'];
+        headers = ['student_id', 'name', 'parent', 'section', 'teacher', 'date_of_birth', 'enrollment_date'];
         
-        // Transform data for CSV
         rows = selectedStudents.map(student => ({
           student_id: student.student_id || '',
-          first_name: student.first_name || '',
-          middle_name: student.middle_name || student.middlename || '',
-          last_name: student.last_name || '',
-          parent_name: `${student.parent_first_name || ''} ${student.parent_middle_name || ''} ${student.parent_last_name || ''}`.trim() || 'Not assigned',
+          name: `${student.first_name || ''} ${student.middle_name || student.middlename || ''} ${student.last_name || ''}`.trim(),
+          parent: `${student.parent_first_name || ''} ${student.parent_middle_name || ''} ${student.parent_last_name || ''}`.trim() || 'Not assigned',
+          section: student.section_name || 'No Section',
+          teacher: student.teacher_name || 'No Teacher',
           date_of_birth: student.date_of_birth || '',
-          enrollment_date: student.enrollment_date || '',
-          parent_email: student.parent_email || '',
-          parent_contact: student.parent_contact || ''
+          enrollment_date: student.enrollment_date || ''
         }));
-      } else {
-        // For parents, teachers, admins - get from user_profiles
+
+      } else if (activeTab === 'parents') {
+        // For parents, match the table columns exactly
         const { data: profileData, error } = await supabaseAdmin
           .from('user_profiles')
           .select('id, username, first_name, middle_name, last_name, email, contact, role, created_at')
           .in('id', ids);
         if (error) throw error;
-        
-        rows = profileData || [];
-        headers = ['id', 'username', 'first_name', 'middle_name', 'last_name', 'email', 'contact', 'role', 'created_at'];
-        
-        // Add children count for parents
-        if (activeTab === 'parents') {
-          headers.push('children_count');
-          rows = rows.map(parent => {
-            const childrenCount = students.filter(student => student.parent_id === parent.id).length;
-            return { ...parent, children_count: childrenCount };
-          });
-        }
+
+        headers = ['id', 'username', 'name', 'email', 'contact', 'children_count', 'role'];
+
+        rows = (profileData || []).map(parent => {
+          const parentChildren = students.filter(student => student.parent_id === parent.id);
+          return {
+            id: String(parent.id).slice(-8), // Show last 8 chars of ID for display
+            username: parent.username || '',
+            name: `${parent.first_name || ''} ${parent.middle_name || ''} ${parent.last_name || ''}`.trim(),
+            email: parent.email || '',
+            contact: parent.contact || '',
+            children_count: parentChildren.length,
+            role: parent.role || ''
+          };
+        });
+
+      } else if (activeTab === 'teachers') {
+        // For teachers, match the table columns exactly
+        const { data: profileData, error } = await supabaseAdmin
+          .from('user_profiles')
+          .select('id, username, first_name, middle_name, last_name, email, contact, role')
+          .in('id', ids);
+        if (error) throw error;
+
+        headers = ['teacher_id', 'name', 'email', 'contact', 'assigned_section', 'student_count'];
+
+        rows = (profileData || []).map((teacher, idx) => {
+          const teacherData = teachers.find(t => t.id === teacher.id);
+          return {
+            teacher_id: idx + 1, // Sequential ID as shown in table
+            name: `${teacher.first_name || ''} ${teacher.middle_name || ''} ${teacher.last_name || ''}`.trim(),
+            email: teacher.email || '',
+            contact: teacher.contact || '',
+            assigned_section: teacherData?.assigned_section || 'Not Assigned',
+            student_count: teacherData?.student_count || 0
+          };
+        });
+
+      } else if (activeTab === 'admins') {
+        // For admins, match the table columns exactly
+        const { data: profileData, error } = await supabaseAdmin
+          .from('user_profiles')
+          .select('id, username, first_name, middle_name, last_name, email, contact, role, created_at')
+          .in('id', ids);
+        if (error) throw error;
+
+        headers = ['admin_id', 'name', 'email', 'contact', 'role', 'created_at'];
+
+        rows = (profileData || []).map((admin, idx) => ({
+          admin_id: idx + 1, // Sequential ID as shown in table
+          name: `${admin.first_name || ''} ${admin.middle_name || ''} ${admin.last_name || ''}`.trim(),
+          email: admin.email || '',
+          contact: admin.contact || '',
+          role: admin.role || '',
+          created_at: admin.created_at ? admin.created_at.split('T')[0] : ''
+        }));
       }
 
-      // Build CSV
+      // Build CSV with proper escaping
       const csvLines = [headers.join(',')];
       for (const r of rows) {
         const line = headers.map(h => {
           const v = r[h] === null || r[h] === undefined ? '' : String(r[h]);
-          // Escape quotes and commas
+          // Escape quotes and wrap in quotes to handle commas and special characters
           return `"${v.replace(/"/g, '""')}"`;
         }).join(',');
         csvLines.push(line);
       }
+      
       const csvContent = csvLines.join('\n');
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
       const url = URL.createObjectURL(blob);
@@ -1382,13 +1476,13 @@ const handleFormSubmit = async (formData) => {
       a.remove();
       URL.revokeObjectURL(url);
 
-      showAlertMessage('success', `Exported ${rows.length} row(s) to CSV`);
+      showAlertMessage('success', `Exported ${rows.length} row(s) to CSV with complete information`);
     } catch (err) {
       showAlertMessage('danger', 'Export failed: ' + (err.message || String(err)));
     }
   };
 
-  // Export selected profiles as a PDF using html2canvas + jsPDF (modeled after ClassroomPage)
+  // Export selected profiles as a comprehensive PDF report
   const handleExportPDF = async (ids = []) => {
     if (!Array.isArray(ids) || ids.length === 0) {
       showAlertMessage('warning', 'No rows selected for export');
@@ -1399,31 +1493,75 @@ const handleFormSubmit = async (formData) => {
       let sectionName = activeTab.charAt(0).toUpperCase() + activeTab.slice(1);
 
       if (activeTab === 'children') {
-        // For children, get data from students
+        // Match the table columns exactly
         const selectedStudents = students.filter(student => ids.includes(student.id));
         rows = selectedStudents.map(student => ({
-          id: student.id,
-          student_id: student.student_id || '',
+          student_id: student.student_id || 'N/A',
           name: `${student.first_name || ''} ${student.middle_name || student.middlename || ''} ${student.last_name || ''}`.trim(),
-          parent_name: `${student.parent_first_name || ''} ${student.parent_middle_name || ''} ${student.parent_last_name || ''}`.trim() || 'Not assigned',
-          date_of_birth: student.date_of_birth || '',
-          enrollment_date: student.enrollment_date || '',
-          parent_email: student.parent_email || '',
-          parent_contact: student.parent_contact || '',
-          role: 'Student'
+          parent: `${student.parent_first_name || ''} ${student.parent_middle_name || ''} ${student.parent_last_name || ''}`.trim() || 'Not assigned',
+          section: student.section_name || 'No Section',
+          teacher: student.teacher_name || 'No Teacher',
+          date_of_birth: student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : 'N/A',
+          enrollment_date: student.enrollment_date ? new Date(student.enrollment_date).toLocaleDateString() : 'N/A'
         }));
-      } else {
-        // For parents, teachers, admins - get from user_profiles
+
+      } else if (activeTab === 'parents') {
+        // Match the table columns exactly
         const { data: profileData, error } = await supabaseAdmin
           .from('user_profiles')
           .select('id, username, first_name, middle_name, last_name, email, contact, role, created_at')
           .in('id', ids);
         if (error) throw error;
-        
-        rows = (profileData || []).map(user => ({
-          ...user,
-          name: `${user.first_name || ''} ${user.middle_name || ''} ${user.last_name || ''}`.trim(),
-          children_count: activeTab === 'parents' ? students.filter(student => student.parent_id === user.id).length : null
+
+        rows = (profileData || []).map((parent, idx) => {
+          const parentChildren = students.filter(student => student.parent_id === parent.id);
+          return {
+            id: idx + 1,
+            username: parent.username || 'N/A',
+            name: `${parent.first_name || ''} ${parent.middle_name || ''} ${parent.last_name || ''}`.trim(),
+            email: parent.email || 'N/A',
+            contact: parent.contact || 'N/A',
+            children_count: parentChildren.length,
+            role: parent.role || ''
+          };
+        });
+
+      } else if (activeTab === 'teachers') {
+        // Match the table columns exactly
+        const { data: profileData, error } = await supabaseAdmin
+          .from('user_profiles')
+          .select('id, username, first_name, middle_name, last_name, email, contact, role')
+          .in('id', ids);
+        if (error) throw error;
+
+        rows = (profileData || []).map((teacher, idx) => {
+          const teacherData = teachers.find(t => t.id === teacher.id);
+          return {
+            id: idx + 1,
+            name: `${teacher.first_name || ''} ${teacher.middle_name || ''} ${teacher.last_name || ''}`.trim(),
+            email: teacher.email || 'N/A',
+            contact: teacher.contact || 'N/A',
+            assigned_section: teacherData?.assigned_section || 'Not Assigned',
+            student_count: teacherData?.student_count || 0
+          };
+        });
+
+      } else if (activeTab === 'admins') {
+        // Match the table columns exactly
+        const { data: profileData, error } = await supabaseAdmin
+          .from('user_profiles')
+          .select('id, username, first_name, middle_name, last_name, email, contact, role, created_at')
+          .in('id', ids);
+        if (error) throw error;
+
+        rows = (profileData || []).map((admin, idx) => ({
+          id: idx + 1,
+          username: admin.username || 'N/A',
+          name: `${admin.first_name || ''} ${admin.middle_name || ''} ${admin.last_name || ''}`.trim(),
+          email: admin.email || 'N/A',
+          contact: admin.contact || 'N/A',
+          role: admin.role || '',
+          created_at: admin.created_at ? admin.created_at.split('T')[0] : 'N/A'
         }));
       }
 
@@ -1534,27 +1672,32 @@ const handleFormSubmit = async (formData) => {
       let colWidths = [];
       
       if (activeTab === 'children') {
-        cols = ['Student ID', 'Name', 'Parent', 'Birth Date', 'Enrollment Date'];
-        colWidths = ['15%', '25%', '25%', '17.5%', '17.5%'];
+        cols = ['Student ID', 'Name', 'Parent', 'Section', 'Teacher', 'Birth Date', 'Enrollment Date'];
+        colWidths = ['14%', '20%', '20%', '14%', '16%', '8%', '8%'];
       } else if (activeTab === 'parents') {
         cols = ['ID', 'Username', 'Name', 'Email', 'Contact', 'Children', 'Role'];
-        colWidths = ['8%', '15%', '25%', '30%', '12%', '5%', '5%'];
+        colWidths = ['8%', '15%', '22%', '25%', '15%', '8%', '7%'];
+      } else if (activeTab === 'teachers') {
+        cols = ['Teacher ID', 'Teacher Name', 'Email', 'Contact', 'Assigned Section', 'Students Count'];
+        colWidths = ['12%', '22%', '28%', '15%', '15%', '8%'];
       } else {
-        cols = ['ID', 'Username', 'Name', 'Email', 'Contact', 'Role', 'Created At'];
-        colWidths = ['8%', '15%', '25%', '30%', '12%', '5%', '5%'];
+        cols = ['Admin ID', 'Admin Name', 'Email', 'Contact', 'Role', 'Created At'];
+        colWidths = ['10%', '20%', '30%', '15%', '10%', '15%'];
       }
       
       cols.forEach((c,i) => {
         const th = document.createElement('th');
         th.textContent = c;
-        th.style.background = '#f8f9fa';
-        th.style.border = '1px solid #dee2e6';
-        th.style.padding = '8px 6px';
-        th.style.fontSize = '10px';
-        th.style.fontWeight = '600';
-        th.style.textAlign = 'left';
+        th.style.background = '#3498db';
+        th.style.color = '#ffffff';
+        th.style.border = '1px solid #2980b9';
+        th.style.padding = '10px 8px';
+        th.style.fontSize = '9px';
+        th.style.fontWeight = '700';
+        th.style.textAlign = 'center';
         th.style.width = colWidths[i];
-        th.style.color = '#495057';
+        th.style.textTransform = 'uppercase';
+        th.style.letterSpacing = '0.5px';
         trHead.appendChild(th);
       });
       thead.appendChild(trHead);
@@ -1565,36 +1708,47 @@ const handleFormSubmit = async (formData) => {
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid #e9ecef';
         tr.style.backgroundColor = idx % 2 === 0 ? '#ffffff' : '#f8f9fa';
+        tr.style.transition = 'background-color 0.2s';
         
         let values = [];
         
         if (activeTab === 'children') {
           values = [
             r.student_id || `STU-${idx + 1}`,
-            r.name || '',
-            r.parent_name || 'Not assigned',
-            r.date_of_birth || '-',
-            r.enrollment_date || '-'
+            r.name || 'N/A',
+            r.parent || 'Not assigned',
+            r.section || 'No Section',
+            r.teacher || 'No Teacher',
+            r.date_of_birth || 'N/A',
+            r.enrollment_date || 'N/A'
           ];
         } else if (activeTab === 'parents') {
           values = [
-            String(idx + 1),
-            r.username || '',
-            r.name || '',
-            r.email || '',
-            r.contact || '',
+            String(r.id || idx + 1),
+            r.username || 'N/A',
+            r.name || 'N/A',
+            r.email || 'N/A',
+            r.contact || 'N/A',
             String(r.children_count || 0),
             r.role || ''
           ];
+        } else if (activeTab === 'teachers') {
+          values = [
+            String(r.id || idx + 1),
+            r.name || 'N/A',
+            r.email || 'N/A',
+            r.contact || 'N/A',
+            r.assigned_section || 'Not Assigned',
+            String(r.student_count || 0)
+          ];
         } else {
           values = [
-            String(idx + 1),
-            r.username || '',
-            r.name || '',
-            r.email || '',
-            r.contact || '',
+            String(r.id || idx + 1),
+            r.name || 'N/A',
+            r.email || 'N/A',
+            r.contact || 'N/A',
             r.role || '',
-            (r.created_at || '').split('T')[0]
+            r.created_at || 'N/A'
           ];
         }
         
@@ -1603,34 +1757,47 @@ const handleFormSubmit = async (formData) => {
           const text = (v || '').toString().trim();
           td.textContent = text;
           td.style.border = '1px solid #dee2e6';
-          td.style.padding = '6px 8px';
-          td.style.fontSize = '9px';
+          td.style.padding = '8px 6px';
+          td.style.fontSize = '8px';
           td.style.wordBreak = 'break-word';
           td.style.whiteSpace = 'normal';
           td.style.overflowWrap = 'anywhere';
-          td.style.lineHeight = '1.4';
-          td.style.color = '#495057';
+          td.style.lineHeight = '1.3';
+          td.style.color = '#2c3e50';
+          td.style.textAlign = 'left';
+          
+          // Special styling for count columns
+          if ((activeTab === 'parents' && cellIdx === 5) || 
+              (activeTab === 'teachers' && cellIdx === 5)) {
+            td.style.textAlign = 'center';
+            td.style.fontWeight = '700';
+            td.style.color = text === '0' ? '#95a5a6' : '#3498db';
+            td.style.fontSize = '9px';
+          }
+          
+          // Special styling for section/teacher assignment
+          if ((activeTab === 'children' && (cellIdx === 3 || cellIdx === 4)) ||
+              (activeTab === 'teachers' && cellIdx === 4)) {
+            if (text.includes('No ') || text.includes('Not ')) {
+              td.style.color = '#e67e22';
+              td.style.fontStyle = 'italic';
+            } else {
+              td.style.color = '#27ae60';
+              td.style.fontWeight = '600';
+            }
+          }
           
           // Special styling for role column
-          const roleColumnIndex = activeTab === 'children' ? -1 : (activeTab === 'parents' ? 6 : 5);
-          if (cellIdx === roleColumnIndex && text) {
+          if ((activeTab === 'parents' && cellIdx === 6) || 
+              (activeTab === 'admins' && cellIdx === 4)) {
             const roleColors = {
               'parent': '#dc3545',
-              'teacher': '#28a745', 
-              'admin': '#007bff',
-              'student': '#fd7e14'
+              'admin': '#007bff'
             };
             const roleColor = roleColors[text.toLowerCase()] || '#6c757d';
             td.style.color = roleColor;
             td.style.fontWeight = '600';
             td.style.textTransform = 'capitalize';
-          }
-          
-          // Special styling for children count (parents only)
-          if (activeTab === 'parents' && cellIdx === 5) {
-            td.style.textAlign = 'center';
-            td.style.fontWeight = '600';
-            td.style.color = text === '0' ? '#6c757d' : '#007bff';
           }
           
           tr.appendChild(td);
@@ -1684,67 +1851,96 @@ const handleFormSubmit = async (formData) => {
       let rightItem = document.createElement('div');
 
       if (activeTab === 'children') {
-        // For children, show parent assignment stats
-        const assignedCount = rows.filter(r => r.parent_name && r.parent_name !== 'Not assigned').length;
-        const unassignedCount = rows.length - assignedCount;
+        // Comprehensive student statistics
+        const assignedParents = rows.filter(r => r.parent_name && r.parent_name !== 'Not assigned').length;
+        const assignedTeachers = rows.filter(r => r.teacher && r.teacher !== 'No Teacher').length;
+        const assignedSections = rows.filter(r => r.section && r.section !== 'No Section').length;
+        const activeStudents = rows.filter(r => r.status === 'Active').length;
         
         middleItem.innerHTML = `
-          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Parent Assignment</div>
+          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Assignment Status</div>
           <div style="font-size: 10px; line-height: 1.5;">
-            <div style="color: #28a745;">Assigned: ${assignedCount}</div>
-            <div style="color: #dc3545;">Unassigned: ${unassignedCount}</div>
+            <div style="color: #28a745;">With Parents: ${assignedParents}</div>
+            <div style="color: #3498db;">With Teachers: ${assignedTeachers}</div>
+            <div style="color: #9b59b6;">In Sections: ${assignedSections}</div>
           </div>
         `;
         
         rightItem.innerHTML = `
-          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Age Groups</div>
+          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Student Status</div>
           <div style="font-size: 10px; color: #495057; line-height: 1.5;">
-            <div>Birth dates recorded</div>
-            <div>Various age ranges</div>
+            <div style="color: #27ae60;">Active: ${activeStudents}</div>
+            <div style="color: #e74c3c;">Inactive: ${rows.length - activeStudents}</div>
+            <div style="color: #95a5a6;">Total: ${rows.length}</div>
           </div>
         `;
       } else if (activeTab === 'parents') {
-        // For parents, show children statistics
+        // Comprehensive parent statistics
         const totalChildren = rows.reduce((sum, parent) => sum + (parent.children_count || 0), 0);
         const parentsWithChildren = rows.filter(parent => (parent.children_count || 0) > 0).length;
+        const activeParents = rows.filter(r => r.status === 'Active').length;
+        const avgChildrenPerParent = parentsWithChildren > 0 ? (totalChildren / parentsWithChildren).toFixed(1) : 0;
         
         middleItem.innerHTML = `
-          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Children Stats</div>
+          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Children Statistics</div>
           <div style="font-size: 10px; line-height: 1.5;">
-            <div style="color: #007bff;">Total Children: ${totalChildren}</div>
+            <div style="color: #3498db;">Total Children: ${totalChildren}</div>
             <div style="color: #28a745;">Active Parents: ${parentsWithChildren}</div>
+            <div style="color: #9b59b6;">Avg per Parent: ${avgChildrenPerParent}</div>
           </div>
         `;
         
         rightItem.innerHTML = `
           <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Account Status</div>
           <div style="font-size: 10px; color: #495057; line-height: 1.5;">
-            <div>Active accounts: ${rows.length}</div>
-            <div>Parent role verified</div>
+            <div style="color: #27ae60;">Active: ${activeParents}</div>
+            <div style="color: #e74c3c;">Inactive: ${rows.length - activeParents}</div>
+            <div style="color: #f39c12;">Parent Role Verified</div>
           </div>
         `;
-      } else {
-        // For teachers/admins, show role counts
-        const roleCounts = rows.reduce((acc, row) => {
-          const role = (row.role || '').charAt(0).toUpperCase() + (row.role || '').slice(1);
-          acc[role] = (acc[role] || 0) + 1;
-          return acc;
-        }, {});
-        
-        const rolesList = Object.entries(roleCounts).map(([role, count]) => 
-          `<div style="color: #495057;">${role}: ${count}</div>`
-        ).join('');
+      } else if (activeTab === 'teachers') {
+        // Comprehensive teacher statistics
+        const assignedTeachers = rows.filter(r => r.assigned_section && r.assigned_section !== 'Not Assigned').length;
+        const totalStudents = rows.reduce((sum, teacher) => sum + (teacher.student_count || 0), 0);
+        const activeTeachers = rows.filter(r => r.status === 'Active').length;
+        const avgStudentsPerTeacher = assignedTeachers > 0 ? (totalStudents / assignedTeachers).toFixed(1) : 0;
         
         middleItem.innerHTML = `
-          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">By Role</div>
-          <div style="font-size: 10px; line-height: 1.5;">${rolesList}</div>
+          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Teaching Statistics</div>
+          <div style="font-size: 10px; line-height: 1.5;">
+            <div style="color: #3498db;">Assigned: ${assignedTeachers}</div>
+            <div style="color: #28a745;">Total Students: ${totalStudents}</div>
+            <div style="color: #9b59b6;">Avg Students: ${avgStudentsPerTeacher}</div>
+          </div>
         `;
         
         rightItem.innerHTML = `
-          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">System Access</div>
+          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Teacher Status</div>
           <div style="font-size: 10px; color: #495057; line-height: 1.5;">
-            <div>Active accounts: ${rows.length}</div>
-            <div>Role verified</div>
+            <div style="color: #27ae60;">Active: ${activeTeachers}</div>
+            <div style="color: #e74c3c;">Inactive: ${rows.length - activeTeachers}</div>
+            <div style="color: #f39c12;">Teacher Role Verified</div>
+          </div>
+        `;
+      } else {
+        // Admin statistics
+        const activeAdmins = rows.filter(r => r.status === 'Active').length;
+        const systemStats = rows.length > 0 ? rows[0].system_overview : 'No data';
+        
+        middleItem.innerHTML = `
+          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">System Overview</div>
+          <div style="font-size: 10px; line-height: 1.5;">
+            <div style="color: #3498db;">${systemStats}</div>
+            <div style="color: #28a745;">System Operational</div>
+          </div>
+        `;
+        
+        rightItem.innerHTML = `
+          <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px; font-weight: 500;">Admin Access</div>
+          <div style="font-size: 10px; color: #495057; line-height: 1.5;">
+            <div style="color: #27ae60;">Active: ${activeAdmins}</div>
+            <div style="color: #e74c3c;">Inactive: ${rows.length - activeAdmins}</div>
+            <div style="color: #dc3545;">Full System Access</div>
           </div>
         `;
       }
@@ -2014,6 +2210,8 @@ const handleFormSubmit = async (formData) => {
                 <th style={{ backgroundColor: '#fffdf2' }}>Student ID</th>
               <th style={{ backgroundColor: '#fffdf2' }}>Name</th>
               <th style={{ backgroundColor: '#fffdf2' }}>Parent</th>
+              <th style={{ backgroundColor: '#fffdf2' }}>Section</th>
+              <th style={{ backgroundColor: '#fffdf2' }}>Teacher</th>
               <th style={{ backgroundColor: '#fffdf2' }}>Birth Date</th>
               <th style={{ backgroundColor: '#fffdf2' }}>Enrollment Date</th>
               <th style={{ backgroundColor: '#fffdf2', borderTopRightRadius: '16px', textAlign: 'center' }}>Actions</th>
@@ -2038,6 +2236,28 @@ const handleFormSubmit = async (formData) => {
                 <td>{student.student_id || `STU-${idx + 1}`}</td>
                 <td>{`${student.first_name || ''}${student.middle_name || student.middlename ? ' ' + (student.middle_name || student.middlename) : ''} ${student.last_name || ''}`.trim()}</td>
                 <td>{`${student.parent_first_name || ''}${student.parent_middle_name ? ' ' + student.parent_middle_name : ''} ${student.parent_last_name || ''}`.trim() || 'Not assigned'}</td>
+                <td>
+                  {student.section_name ? (
+                    <Badge bg="info" style={{ borderRadius: '12px', padding: '6px 12px' }}>
+                      {student.section_name}
+                    </Badge>
+                  ) : (
+                    <Badge bg="secondary" style={{ borderRadius: '12px', padding: '6px 12px' }}>
+                      No Section
+                    </Badge>
+                  )}
+                </td>
+                <td>
+                  {student.teacher_name ? (
+                    <Badge bg="success" style={{ borderRadius: '12px', padding: '6px 12px' }}>
+                      {student.teacher_name}
+                    </Badge>
+                  ) : (
+                    <Badge bg="warning" style={{ borderRadius: '12px', padding: '6px 12px', color: '#000' }}>
+                      No Teacher
+                    </Badge>
+                  )}
+                </td>
                 <td>{student.date_of_birth || '-'}</td>
                 <td>{student.enrollment_date || '-'}</td>
                 <td style={{ textAlign: 'center' }}>
@@ -2101,6 +2321,8 @@ const handleFormSubmit = async (formData) => {
               <th style={{ backgroundColor: '#f6fcf6' }}>Teacher Name</th>
               <th style={{ backgroundColor: '#f6fcf6' }}>Email</th>
               <th style={{ backgroundColor: '#f6fcf6' }}>Contact</th>
+              <th style={{ backgroundColor: '#f6fcf6' }}>Assigned Section</th>
+              <th style={{ backgroundColor: '#f6fcf6' }}>Students Count</th>
               <th style={{ backgroundColor: '#f6fcf6', borderTopRightRadius: '16px', textAlign: 'center' }}>Actions</th>
             </tr>
           </thead>
@@ -2124,6 +2346,31 @@ const handleFormSubmit = async (formData) => {
                 <td>{teacher.first_name} {teacher.middle_name ? teacher.middle_name + ' ' : ''}{teacher.last_name}</td>
                 <td>{teacher.email}</td>
                 <td>{teacher.contact}</td>
+                <td>
+                  {teacher.assigned_section ? (
+                    <Badge bg="primary" style={{ borderRadius: '12px', padding: '6px 12px' }}>
+                      {teacher.assigned_section}
+                    </Badge>
+                  ) : (
+                    <Badge bg="secondary" style={{ borderRadius: '12px', padding: '6px 12px' }}>
+                      Not Assigned
+                    </Badge>
+                  )}
+                </td>
+                <td style={{ textAlign: 'center' }}>
+                  <Badge 
+                    bg={teacher.student_count > 0 ? 'success' : 'light'} 
+                    style={{ 
+                      borderRadius: '12px', 
+                      padding: '6px 12px',
+                      color: teacher.student_count > 0 ? 'white' : '#666',
+                      fontSize: '0.875rem',
+                      minWidth: '40px'
+                    }}
+                  >
+                    {teacher.student_count}
+                  </Badge>
+                </td>
                 <td style={{ textAlign: 'center' }}>
                   <Button variant="outline-info" size="sm" className="edit-btn" style={{ borderRadius: '20px', background: 'transparent', marginRight: '6px' }} onClick={() => handleShowModal('edit', teacher)}><FiEdit2 /></Button>
                   <Button variant="outline-danger" size="sm" className="delete-btn" style={{ borderRadius: '20px', background: 'transparent' }} onClick={() => handleShowModal('delete', teacher)}><FiTrash2 /></Button>
