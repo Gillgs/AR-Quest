@@ -160,6 +160,11 @@ const StatisticsPage = () => {
   const [monthlyStudentCounts, setMonthlyStudentCounts] = useState([]);
   const [sectionAttendance, setSectionAttendance] = useState([]);
   const [error, setError] = useState(null);
+  // User authentication and role management
+  const [userRole, setUserRole] = useState(null);
+  const [teacherSections, setTeacherSections] = useState([]);
+  const [teacherStudentCount, setTeacherStudentCount] = useState(0);
+  const [teacherSectionsLoaded, setTeacherSectionsLoaded] = useState(false);
   // For section-student distribution
   const [sectionStudentData, setSectionStudentData] = useState({
     labels: [],
@@ -188,6 +193,12 @@ const StatisticsPage = () => {
   const [overallAverageScore, setOverallAverageScore] = useState(0);
   const [scoreImprovement, setScoreImprovement] = useState(0);
   const [totalQuizAttempts, setTotalQuizAttempts] = useState(0);
+  // Dynamic score trend data based on actual quiz attempts
+  const [scoreTrendData, setScoreTrendData] = useState({
+    labels: [],
+    datasets: []
+  });
+  const [loadingTrendData, setLoadingTrendData] = useState(true);
 
   // Handle window resize for mobile responsiveness
   useEffect(() => {
@@ -198,18 +209,104 @@ const StatisticsPage = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Get current user and role (following ClassroomPage/SubjectModulePage pattern)
+  useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const role = localStorage.getItem("userRole");
+        const userId = localStorage.getItem("userId");
+        
+        // Debug logging for authentication issues (same as ClassroomPage)
+        console.log('StatisticsPage - User Authentication Debug:');
+        console.log('userRole:', role);
+        console.log('userId:', userId);
+        console.log('supabaseAdmin available:', !!supabaseAdmin);
+        
+        setUserRole(role);
+        
+        if (role === 'teacher' && userId) {
+          // Use admin client for teachers to bypass RLS policies (same as other pages)
+          const client = supabaseAdmin || supabase;
+          
+          // Get sections assigned to this teacher (direct query by teacher_id)
+          const { data: sections, error: sectionsError } = await client
+            .from('sections')
+            .select('id, name, time_period, classroom_number, school_year')
+            .eq('teacher_id', userId)
+            .eq('is_active', true);
+            
+          if (sectionsError) {
+            console.error('Error fetching teacher sections:', sectionsError);
+            setTeacherSections([]);
+            setTeacherStudentCount(0);
+            setTeacherSectionsLoaded(true);
+            return;
+          }
+          
+          setTeacherSections(sections || []);
+          
+          // Get count of students in teacher's sections
+          if (sections && sections.length > 0) {
+            const sectionIds = sections.map(section => section.id);
+            const { count: studentCount, error: countError } = await client
+              .from('students')
+              .select('id', { count: 'exact', head: true })
+              .in('section_id', sectionIds)
+              .eq('is_active', true);
+              
+            if (!countError && typeof studentCount === 'number') {
+              setTeacherStudentCount(studentCount);
+            }
+          } else {
+            setTeacherStudentCount(0);
+          }
+          
+          setTeacherSectionsLoaded(true);
+        } else {
+          // For non-teachers, mark as loaded immediately
+          setTeacherSectionsLoaded(true);
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error);
+        setError("Failed to fetch user data");
+        // Even if there's an error, mark teacher sections as loaded to prevent infinite waiting
+        setTeacherSectionsLoaded(true);
+      }
+    };
+
+    fetchCurrentUser();
+    
+    // Fallback timeout to ensure loading states don't get stuck
+    const timeoutId = setTimeout(() => {
+      if (!teacherSectionsLoaded) {
+        console.log('Teacher sections loading timeout, forcing loaded state');
+        setTeacherSectionsLoaded(true);
+      }
+    }, 5000); // 5 second timeout
+    
+    return () => clearTimeout(timeoutId);
+  }, [teacherSectionsLoaded]);
+
   // Fetch section-student distribution data and monthly student growth
   useEffect(() => {
     const fetchSectionStudentData = async () => {
+      // Don't fetch if user role hasn't been determined yet
+      if (!userRole) {
+        return;
+      }
+      
+      // Distribution shows all sections, so no need to wait for teacher sections
+      
       setLoadingSectionPie(true);
       try {
-        // Use supabaseAdmin if available, otherwise fall back to regular supabase
-        const client = supabaseAdmin || supabase;
+        // Use admin client for teachers and admins, same as ClassroomPage pattern
+        const client = (userRole === 'teacher' || userRole === 'admin') && supabaseAdmin ? supabaseAdmin : supabase;
         
-        // Get all sections
+        // Get all sections (show all sections for both teachers and admins)
         const { data: sections, error: sectionError } = await client
           .from("sections")
-          .select("id, name, classroom_number, time_period");
+          .select("id, name, classroom_number, time_period")
+          .eq('is_active', true);
         if (sectionError) throw sectionError;
         if (!sections || sections.length === 0) {
           setSectionStudentData({
@@ -225,11 +322,11 @@ const StatisticsPage = () => {
           setLoadingSectionPie(false);
           return;
         }
-        // Get all students with section_id and enrollment_date
-        // Use supabaseAdmin for consistent counts across admin and teacher views
+        // Get all students (show all students for distribution overview)
         const { data: students, error: studentError } = await client
           .from("students")
           .select("id, section_id, enrollment_date, is_active, first_name, last_name")
+          .eq('is_active', true)
           .order('enrollment_date', { ascending: false });
         if (studentError) throw studentError;
         // Count students per section with more detailed analysis
@@ -389,7 +486,7 @@ const StatisticsPage = () => {
       setLoadingSectionPie(false);
     };
     fetchSectionStudentData();
-  }, []);
+  }, [userRole]);
   const mainContentStyle = {
     marginLeft: !isMobile ? '220px' : '0',
     width: !isMobile ? 'calc(100% - 236px)' : '100%',
@@ -437,37 +534,182 @@ const StatisticsPage = () => {
     }
   };
 
-  // Score trends data
-  const scoreTrendData = {
-    labels: ["Week 1", "Week 2", "Week 3", "Week 4"],
-    datasets: [
-      {
-        label: "Average Score",
-        data: [75, 78, 80, 82],
-        borderColor: chartColors.secondary,
-        backgroundColor: chartColors.secondaryLight,
-        borderWidth: 2,
-        fill: true,
-        tension: 0.4,
-      },
-      {
-        label: "Highest Score",
-        data: [85, 88, 90, 92],
-        borderColor: chartColors.success,
-        backgroundColor: chartColors.successLight,
-        borderWidth: 2,
-        fill: true,
-        tension: 0.4,
+  // Score trends data is now handled by the state variable scoreTrendData
+
+  // Fetch score trend data for overall performance chart
+  const fetchScoreTrendData = async () => {
+    setLoadingTrendData(true);
+    try {
+      // Use admin client for teachers and admins, same as ClassroomPage pattern
+      const client = (userRole === 'teacher' || userRole === 'admin') && supabaseAdmin ? supabaseAdmin : supabase;
+      
+      // Get quiz attempts from the last 4 weeks with proper filtering
+      const fourWeeksAgo = new Date();
+      fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28);
+      
+      let trendQuery = client
+        .from('quiz_attempts')
+        .select(`
+          score,
+          completed_at,
+          student_id,
+          students!inner(
+            id,
+            section_id
+          )
+        `)
+        .gte('completed_at', fourWeeksAgo.toISOString())
+        .not('score', 'is', null)
+        .order('completed_at', { ascending: true });
+
+      // If teacher, filter by their assigned sections
+      if (userRole === 'teacher' && teacherSections.length > 0) {
+        const sectionIds = teacherSections.map(section => section.id);
+        trendQuery = trendQuery.in('students.section_id', sectionIds);
       }
-    ],
-  };  // Section distribution data is now handled by the state variable sectionDistributionData
+
+      const { data: trendAttempts, error: trendError } = await trendQuery;
+      
+      if (trendError) throw trendError;
+
+      // If no data, set empty trend data
+      if (!trendAttempts || trendAttempts.length === 0) {
+        setScoreTrendData({
+          labels: [],
+          datasets: []
+        });
+        setLoadingTrendData(false);
+        return;
+      }
+
+      // Group data by weeks
+      const weekLabels = [];
+      const weekData = {};
+      
+      // Create weekly buckets
+      for (let i = 3; i >= 0; i--) {
+        const weekStart = new Date();
+        weekStart.setDate(weekStart.getDate() - (i * 7 + 6));
+        const weekEnd = new Date();
+        weekEnd.setDate(weekEnd.getDate() - (i * 7));
+        
+        const weekLabel = `Week ${4 - i}`;
+        weekLabels.push(weekLabel);
+        weekData[weekLabel] = {
+          scores: [],
+          start: weekStart,
+          end: weekEnd
+        };
+      }
+
+      // Distribute attempts into weeks
+      trendAttempts.forEach(attempt => {
+        const attemptDate = new Date(attempt.completed_at);
+        
+        for (const [weekLabel, weekInfo] of Object.entries(weekData)) {
+          if (attemptDate >= weekInfo.start && attemptDate <= weekInfo.end) {
+            weekInfo.scores.push(attempt.score);
+            break;
+          }
+        }
+      });
+
+      // Calculate averages and highest scores for each week
+      const avgScores = [];
+      const highestScores = [];
+      
+      weekLabels.forEach(weekLabel => {
+        const scores = weekData[weekLabel].scores;
+        if (scores.length > 0) {
+          const avg = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+          avgScores.push(Math.round(avg));
+          highestScores.push(Math.max(...scores));
+        } else {
+          avgScores.push(0);
+          highestScores.push(0);
+        }
+      });
+
+      setScoreTrendData({
+        labels: weekLabels,
+        datasets: [
+          {
+            label: "Average Score",
+            data: avgScores,
+            borderColor: chartColors.secondary,
+            backgroundColor: chartColors.secondaryLight,
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4,
+          },
+          {
+            label: "Highest Score",
+            data: highestScores,
+            borderColor: chartColors.success,
+            backgroundColor: chartColors.successLight,
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4,
+          }
+        ]
+      });
+
+    } catch (error) {
+      console.error('Error fetching score trend data:', error);
+      // Set empty data on error
+      setScoreTrendData({
+        labels: [],
+        datasets: []
+      });
+    }
+    setLoadingTrendData(false);
+  };
 
   // Fetch subject performance data
   useEffect(() => {
     const fetchSubjectPerformanceData = async () => {
+      console.log('fetchSubjectPerformanceData called:', {
+        userRole,
+        teacherSectionsLoaded,
+        teacherSectionsCount: teacherSections.length,
+        teacherStudentCount
+      });
+      
+      // Don't fetch if user role hasn't been determined yet
+      if (!userRole) {
+        console.log('Skipping fetch: userRole not determined');
+        return;
+      }
+      
+      // Don't fetch if we're still loading teacher sections (for teachers)
+      if (userRole === 'teacher' && !teacherSectionsLoaded) {
+        console.log('Skipping fetch: teacher sections still loading');
+        return;
+      }
+      
+      // If teacher has no sections or no students, set empty data
+      if (userRole === 'teacher' && (teacherSections.length === 0 || teacherStudentCount === 0)) {
+        console.log('Teacher has no sections or students, showing empty data');
+        setSubjectPerformanceData({
+          labels: [],
+          datasets: []
+        });
+        setOverallAverageScore(0);
+        setTotalQuizAttempts(0);
+        setScoreImprovement(0);
+        setScoreTrendData({
+          labels: [],
+          datasets: []
+        });
+        setLoadingSubjects(false);
+        setLoadingTrendData(false);
+        return;
+      }
+      
       setLoadingSubjects(true);
       try {
-        const client = supabaseAdmin || supabase;
+        // Use admin client for teachers and admins, same as ClassroomPage pattern
+        const client = (userRole === 'teacher' || userRole === 'admin') && supabaseAdmin ? supabaseAdmin : supabase;
         
         // Use direct SQL query to get subject performance
         const { data: subjectStats, error: subjectError } = await client
@@ -480,8 +722,7 @@ const StatisticsPage = () => {
 
         // Get quiz performance for each subject with improved filtering
         const performancePromises = subjectStats.map(async (subject) => {
-          // Get quiz attempts with proper filtering (same as progressUtils)
-          const { data: quizData, error: quizError } = await client
+          let quizQuery = client
             .from('quiz_attempts')
             .select(`
               score,
@@ -495,13 +736,24 @@ const StatisticsPage = () => {
                 modules!inner(
                   subject_id
                 )
+              ),
+              students!inner(
+                id,
+                section_id
               )
             `)
             .eq('quizzes.modules.subject_id', subject.id)
             .not('score', 'is', null); // Only include attempts with valid scores
 
-          // Get lesson completion data for this subject
-          const { data: lessonData, error: lessonError } = await client
+          // If teacher, filter by their assigned sections
+          if (userRole === 'teacher' && teacherSections.length > 0) {
+            const sectionIds = teacherSections.map(section => section.id);
+            quizQuery = quizQuery.in('students.section_id', sectionIds);
+          }
+
+          const { data: quizData, error: quizError } = await quizQuery;
+
+          let lessonQuery = client
             .from('lesson_completions')
             .select(`
               student_id,
@@ -511,9 +763,21 @@ const StatisticsPage = () => {
                 modules!inner(
                   subject_id
                 )
+              ),
+              students!inner(
+                id,
+                section_id
               )
             `)
             .eq('lessons.modules.subject_id', subject.id);
+
+          // If teacher, filter lesson completions by their assigned sections
+          if (userRole === 'teacher' && teacherSections.length > 0) {
+            const sectionIds = teacherSections.map(section => section.id);
+            lessonQuery = lessonQuery.in('students.section_id', sectionIds);
+          }
+
+          const { data: lessonData, error: lessonError } = await lessonQuery;
 
           if (quizError) {
             console.warn(`Error fetching quiz data for ${subject.name}:`, quizError);
@@ -605,6 +869,9 @@ const StatisticsPage = () => {
         const improvement = Math.max(0, overallAvg - expectedAverage);
         setScoreImprovement(Math.round(improvement));
 
+        // Fetch trend data for overall performance chart
+        await fetchScoreTrendData();
+
       } catch (error) {
         console.error('Error fetching subject performance:', error);
         setError("Failed to fetch subject performance data");
@@ -634,7 +901,7 @@ const StatisticsPage = () => {
     };
 
     fetchSubjectPerformanceData();
-  }, []);
+  }, [userRole, teacherSections, teacherSectionsLoaded]);
 
   // Chart options
   const chartOptions = {
@@ -784,11 +1051,15 @@ const StatisticsPage = () => {
                                   }}>
                                     <h6 className="text-muted mb-2" style={{ fontSize: isMobile ? '0.9rem' : '1rem', fontWeight: '500' }}>Average Score</h6>
                                     <h2 className="mb-2" style={{ color: '#333', fontWeight: '700', fontSize: isMobile ? '2rem' : '2.5rem' }}>
-                                      {loadingSubjects ? '...' : `${overallAverageScore || 0}%`}
+                                      {loadingSubjects ? '...' : 
+                                        totalQuizAttempts > 0 ? `${overallAverageScore}%` : 'N/A'
+                                      }
                                     </h2>
                                     <small className={`d-block ${scoreImprovement > 0 ? 'text-success' : 'text-muted'}`} style={{ fontWeight: '600', fontSize: isMobile ? '0.8rem' : '0.9rem' }}>
                                       {loadingSubjects ? 'Loading...' : 
-                                        scoreImprovement > 0 ? `↑ ${scoreImprovement}% above expected` : 'Based on quiz performance'
+                                        totalQuizAttempts === 0 ? 
+                                          (userRole === 'teacher' ? 'No quiz attempts by your students' : 'No quiz attempts recorded') :
+                                          scoreImprovement > 0 ? `↑ ${scoreImprovement}% above expected` : 'Based on quiz performance'
                                       }
                                     </small>
                                   </div>
@@ -804,9 +1075,18 @@ const StatisticsPage = () => {
                                     justifyContent: 'center',
                                     minHeight: '150px'
                                   }}>
-                                    <h6 className="text-muted mb-2" style={{ fontSize: isMobile ? '0.9rem' : '1rem', fontWeight: '500' }}>Total Students</h6>
-                                    <h2 className="mb-2" style={{ color: '#333', fontWeight: '700', fontSize: isMobile ? '2rem' : '2.5rem' }}>{totalStudents}</h2>
-                                    <small className="text-muted d-block" style={{ fontWeight: '500', fontSize: isMobile ? '0.8rem' : '0.9rem' }}>Across all sections</small>
+                                    <h6 className="text-muted mb-2" style={{ fontSize: isMobile ? '0.9rem' : '1rem', fontWeight: '500' }}>
+                                      {userRole === 'teacher' ? 'Your Students' : 'Total Students'}
+                                    </h6>
+                                    <h2 className="mb-2" style={{ color: '#333', fontWeight: '700', fontSize: isMobile ? '2rem' : '2.5rem' }}>
+                                      {userRole === 'teacher' ? teacherStudentCount : totalStudents}
+                                    </h2>
+                                    <small className="text-muted d-block" style={{ fontWeight: '500', fontSize: isMobile ? '0.8rem' : '0.9rem' }}>
+                                      {userRole === 'teacher' ? 
+                                        `In your ${teacherSections.length} assigned section${teacherSections.length !== 1 ? 's' : ''}` : 
+                                        'Across all sections'
+                                      }
+                                    </small>
                                   </div>
                                 </Col>
                               </Row>
@@ -942,8 +1222,34 @@ const StatisticsPage = () => {
                               borderRadius: '24px 24px 0 0'
                             }}>Overall Performance</Card.Header>
                             <Card.Body className="d-flex flex-column flex-grow-1" style={{ padding: isMobile ? '1rem' : '2rem', background: 'rgba(255,255,255,0.95)', borderRadius: '0 0 24px 24px' }}>
-                              <div style={{ ...mobileChartContainerStyle, background: 'rgba(106,57,228,0.04)', borderRadius: '18px', boxShadow: '0 2px 12px rgba(106,57,228,0.05)', padding: isMobile ? '1rem' : '2rem', height: '350px' }}>
-                                <Line data={scoreTrendData} options={{...baseChartOptions, scales: chartOptions.scales}} />
+                              <div style={{ 
+                                ...mobileChartContainerStyle, 
+                                background: 'rgba(106,57,228,0.04)', 
+                                borderRadius: '18px', 
+                                boxShadow: '0 2px 12px rgba(106,57,228,0.05)', 
+                                padding: isMobile ? '1rem' : '2rem', 
+                                height: '350px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center'
+                              }}>
+                                {loadingTrendData ? (
+                                  <div style={{textAlign: 'center', padding: '2rem'}}>
+                                    <span>Loading performance trends...</span>
+                                  </div>
+                                ) : scoreTrendData.labels.length === 0 ? (
+                                  <div style={{textAlign: 'center', padding: '2rem', color: '#666'}}>
+                                    <p style={{ margin: 0, fontSize: '1.1rem', fontWeight: '500' }}>No Performance Data Available</p>
+                                    <small style={{ color: '#999' }}>
+                                      {userRole === 'teacher' ? 
+                                        'Your students haven\'t taken any quizzes yet.' : 
+                                        'No quiz attempts recorded in the last 4 weeks.'
+                                      }
+                                    </small>
+                                  </div>
+                                ) : (
+                                  <Line data={scoreTrendData} options={{...baseChartOptions, scales: chartOptions.scales}} />
+                                )}
                               </div>
                             </Card.Body>
                             <Card.Footer className="bg-transparent" style={{
@@ -954,7 +1260,18 @@ const StatisticsPage = () => {
                               borderRadius: '0 0 24px 24px'
                             }}>
                               <small className="text-muted">
-                                Overall performance trend showing steady improvement in both average and highest scores.
+                                {loadingTrendData ? 
+                                  'Loading performance trend data...' : 
+                                  scoreTrendData.labels.length === 0 ?
+                                    (userRole === 'teacher' ? 
+                                      'Performance trends will appear when your students start taking quizzes.' :
+                                      'Performance trends based on quiz attempts from the last 4 weeks.'
+                                    ) :
+                                    (userRole === 'teacher' ? 
+                                      'Performance trends for your students over the last 4 weeks.' :
+                                      'Overall performance trends showing quiz score patterns over the last 4 weeks.'
+                                    )
+                                }
                               </small>
                             </Card.Footer>
                           </Card>
@@ -977,7 +1294,19 @@ const StatisticsPage = () => {
                               alignItems: 'center',
                               padding: isMobile ? '1rem' : '1.5rem',
                               borderRadius: '24px 24px 0 0'
-                            }}>Subject Performance</Card.Header>
+                            }}>
+                              Subject Performance
+                              {userRole === 'teacher' && (
+                                <small style={{ 
+                                  marginLeft: '0.5rem', 
+                                  fontSize: '0.75rem', 
+                                  opacity: 0.7,
+                                  fontWeight: '400'
+                                }}>
+                                  (Your Students Only)
+                                </small>
+                              )}
+                            </Card.Header>
                             <Card.Body className="d-flex flex-column flex-grow-1" style={{ padding: isMobile ? '1rem' : '2rem', background: 'rgba(255,255,255,0.95)', borderRadius: '0 0 24px 24px' }}>
                               <div style={{
                                 ...mobileChartContainerStyle,
@@ -995,8 +1324,17 @@ const StatisticsPage = () => {
                                     <span>Loading subject performance...</span>
                                   </div>
                                 ) : subjectPerformanceData.labels.length === 0 ? (
-                                  <div style={{textAlign: 'center', padding: '2rem'}}>
-                                    <span>No subject performance data available.</span>
+                                  <div style={{textAlign: 'center', padding: '2rem', color: '#666'}}>
+                                    <p style={{ margin: 0, fontSize: '1.1rem', fontWeight: '500' }}>No Subject Performance Data</p>
+                                    <small style={{ color: '#999' }}>
+                                      {userRole === 'teacher' ? 
+                                        (teacherStudentCount === 0 ? 
+                                          'You have no students assigned to your sections.' : 
+                                          'Your students haven\'t taken any quizzes yet.'
+                                        ) : 
+                                        'No quiz attempts recorded across all subjects.'
+                                      }
+                                    </small>
                                   </div>
                                 ) : (
                                   <Bar data={subjectPerformanceData} options={{
@@ -1052,7 +1390,9 @@ const StatisticsPage = () => {
                               <small className="text-muted">
                                 {loadingSubjects ? 
                                   'Loading subject performance data...' : 
-                                  `Real-time performance data from ${totalQuizAttempts} quiz attempts across all subjects.`
+                                  userRole === 'teacher' ? 
+                                    `Performance data from ${totalQuizAttempts} quiz attempts by your students across all subjects.` :
+                                    `Real-time performance data from ${totalQuizAttempts} quiz attempts across all subjects.`
                                 }
                               </small>
                             </Card.Footer>
@@ -1174,7 +1514,7 @@ const StatisticsPage = () => {
                             }}>
                               <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? '0.5rem' : '2rem', alignItems: isMobile ? 'flex-start' : 'center' }}>
                                 <small className="text-muted">
-                                  <strong>{sectionStats.totalStudents}</strong> students across <strong>{sectionStats.totalSections}</strong> sections
+                                  <strong>{sectionStats.totalStudents}</strong> students across <strong>{sectionStats.totalSections}</strong> section{sectionStats.totalSections !== 1 ? 's' : ''}
                                 </small>
                                 <small className="text-muted">
                                   Avg: <strong>{sectionStats.averagePerSection}</strong> students per section
@@ -1185,7 +1525,7 @@ const StatisticsPage = () => {
                                   </small>
                                 )}
                                 <small className="text-muted">
-                                  <strong>{sectionStats.sectionsWithStudents}</strong> active sections
+                                  <strong>{sectionStats.sectionsWithStudents}</strong> active section{sectionStats.sectionsWithStudents !== 1 ? 's' : ''}
                                 </small>
                               </div>
                             </Card.Footer>
