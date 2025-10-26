@@ -5,7 +5,6 @@ import { supabase } from "../config/supabase";
 
 const ForgotPasswordPage = () => {
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState("user");
   const [showSuccess, setShowSuccess] = useState(false);
   const [showError, setShowError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -25,7 +24,8 @@ const ForgotPasswordPage = () => {
       if (!error) {
         setShowSuccess(true);
         setTimeout(() => {
-          navigate("/verify");
+          // Pass the email to the verification page so the OTP page can verify without asking again
+          navigate("/verify", { state: { email } });
         }, 1500); // Show success message briefly before navigating
       } else {
         setShowError(true);
@@ -71,7 +71,7 @@ const ForgotPasswordPage = () => {
                   Forgot Password
                 </h4>
                 <p className="text-muted">
-                  Enter your email address and select your role to receive password reset instructions.
+                  Enter your email address to receive password reset instructions.
                 </p>
               </div>
 
@@ -107,25 +107,7 @@ const ForgotPasswordPage = () => {
                   />
                 </Form.Group>
 
-                <Form.Group className="mb-3">
-                  <Form.Label style={{ fontWeight: "600", color: "#152AC8" }}>
-                    Role
-                  </Form.Label>
-                  <Form.Select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    required
-                    style={{
-                      padding: "12px",
-                      borderRadius: "15px",
-                      border: "1px solid #152AC8",
-                      backgroundColor: "rgba(21, 42, 200, 0.15)"
-                    }}
-                  >
-                    <option value="user">User</option>
-                    <option value="teacher">Teacher</option>
-                  </Form.Select>
-                </Form.Group>
+                {/* Role selection removed: only email is needed to reset password */}
 
                 <Button
                   variant="primary"
