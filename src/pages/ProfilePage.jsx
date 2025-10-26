@@ -1202,7 +1202,16 @@ const ProfilePage = () => {
                                   width: "100%"
                                 }}
                               >
-                              <div className="card-block" style={{ padding: "clamp(0.75rem, 2.5vw, 2rem)", height: "100%", overflow: "hidden", fontFamily: "'Segoe UI', 'Trebuchet MS', sans-serif" }}>
+                              <div className="card-block" style={{ 
+                                padding: "clamp(0.75rem, 2.5vw, 2rem)", 
+                                height: "100%", 
+                                maxHeight: isMobile ? "calc(100vh - 280px)" : "calc(75vh - 60px)",
+                                overflowY: "auto", 
+                                overflowX: "hidden",
+                                fontFamily: "'Segoe UI', 'Trebuchet MS', sans-serif",
+                                scrollbarWidth: "thin",
+                                scrollbarColor: "#68D391 #f1f1f1"
+                              }}>
                                 {/* Removed the My Information section */}
                                 {userRole === 'user' && userData?.sections && (
                                   <Row>
