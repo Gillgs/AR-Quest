@@ -1539,23 +1539,7 @@ const StatisticsPage = () => {
                       <FiFileText size={isMobile ? 14 : 16} />
                       {!isMobile && (isGeneratingPDF ? 'Generating...' : 'Export PDF')}
                     </Button>
-                    <Button
-                      variant="outline-info"
-                      size={isMobile ? "sm" : "md"}
-                      onClick={() => setShowInfoModal(true)}
-                      className="no-print d-flex align-items-center gap-2"
-                      style={{
-                        borderRadius: '20px',
-                        padding: isMobile ? '0.4rem 0.8rem' : '0.5rem 1rem',
-                        fontSize: isMobile ? '0.8rem' : '0.9rem',
-                        fontWeight: '500',
-                        border: '1px solid rgba(23, 162, 184, 0.3)',
-                        background: 'rgba(23, 162, 184, 0.05)',
-                        color: '#17a2b8'
-                      }}
-                    >
-                      ℹ️ {!isMobile && 'How it Works'}
-                    </Button>
+                    
                   </div>
                 </div>
                 <Nav variant="tabs" className={`mb-4 ${isMobile ? 'flex-wrap' : ''}`} style={{
@@ -1625,32 +1609,12 @@ const StatisticsPage = () => {
                       Distribution
                     </Nav.Link>
                   </Nav.Item>
-                  <Nav.Item className={isMobile ? 'flex-fill' : ''}>
-                    <Nav.Link 
-                      active={activeTab === 'engagement'} 
-                      onClick={() => setActiveTab('engagement')}
-                      className="nav-tab-link"
-                      style={{
-                        borderRadius: isMobile ? '20px' : '8px 8px 0 0',
-                        fontWeight: activeTab === 'engagement' ? '600' : '400',
-                        color: activeTab === 'engagement' ? '#6a39e4' : '#666',
-                        border: activeTab === 'engagement' ? '1px solid rgba(0,0,0,0.08)' : 'none',
-                        borderBottom: activeTab === 'engagement' && !isMobile ? '3px solid #6a39e4' : 'none',
-                        background: activeTab === 'engagement' ? 'rgba(106, 57, 228, 0.03)' : 'transparent',
-                        padding: isMobile ? '0.5rem 1rem' : '0.75rem 1rem',
-                        fontSize: isMobile ? '0.85rem' : '1rem',
-                        textAlign: 'center',
-                        marginBottom: isMobile ? '0.25rem' : '0'
-                      }}
-                    >
-                      Engagement
-                    </Nav.Link>
-                  </Nav.Item>
+                  
                 </Nav>
 
                 {/* Time Filter Controls */}
                 <div className={`d-flex ${isMobile ? 'flex-column' : 'flex-row'} gap-2 mb-4 align-items-center`}>
-                  <span className="text-muted fw-semibold" style={{ fontSize: isMobile ? '0.9rem' : '1rem', minWidth: 'fit-content' }}>
+                  <span className="text-muted fw-semibold" style={{ fontSize: isMobile ? '0.85rem' : '0.95rem', minWidth: 'fit-content' }}>
                     Time Period:
                   </span>
                   <div className={`d-flex gap-1 ${isMobile ? 'w-100' : ''}`} style={{ flexWrap: 'wrap' }}>
@@ -1663,13 +1627,13 @@ const StatisticsPage = () => {
                       <button
                         key={filter.key}
                         onClick={() => setTimeFilter(filter.key)}
-                        className={`btn ${timeFilter === filter.key ? 'btn-primary' : 'btn-outline-primary'}`}
+                        className={`btn`}
                         style={{
-                          borderRadius: '20px',
-                          padding: isMobile ? '0.4rem 0.8rem' : '0.5rem 1rem',
-                          fontSize: isMobile ? '0.8rem' : '0.9rem',
+                          borderRadius: '18px',
+                          padding: isMobile ? '0.35rem 0.6rem' : '0.45rem 0.9rem',
+                          fontSize: isMobile ? '0.78rem' : '0.88rem',
                           fontWeight: '500',
-                          border: timeFilter === filter.key ? 'none' : '1px solid rgba(106, 57, 228, 0.3)',
+                          border: '1px solid rgba(106, 57, 228, 0.3)',
                           background: timeFilter === filter.key 
                             ? 'linear-gradient(135deg, #6a39e4 0%, #7367f0 100%)'
                             : 'rgba(106, 57, 228, 0.05)',
@@ -1679,8 +1643,10 @@ const StatisticsPage = () => {
                             ? '0 4px 12px rgba(106, 57, 228, 0.3)' 
                             : '0 2px 6px rgba(106, 57, 228, 0.1)',
                           flex: isMobile ? '1' : 'none',
-                          minWidth: isMobile ? 'auto' : '110px',
-                          transform: timeFilter === filter.key ? 'translateY(-1px)' : 'none'
+                          minWidth: isMobile ? 'auto' : '90px',
+                          /* Keep no transform so size and layout don't shift when active */
+                          transform: 'none',
+                          boxSizing: 'border-box'
                         }}
                       >
                         <span style={{ marginRight: '0.3rem' }}>{filter.icon}</span>
@@ -1705,9 +1671,7 @@ const StatisticsPage = () => {
                            timeFilter === 'week' ? 'the last 7 days' : 
                            'the last 30 days'}
                         </strong>. 
-                        {!loadingEngagement && engagementData.totalQuizAttempts + engagementData.totalLessonCompletions > 0 && (
-                          <span> Found <strong>{engagementData.totalQuizAttempts + engagementData.totalLessonCompletions}</strong> total activities.</span>
-                        )}
+                        
                       </span>
                     </div>
                   </div>
@@ -1789,57 +1753,7 @@ const StatisticsPage = () => {
                                 </Col>
                               </Row>
                               
-                              {/* Period Comparison */}
-                              <Row className="w-100 justify-content-center g-4 mt-4">
-                                <Col xs={12}>
-                                  <div className="p-3 rounded-4" style={{
-                                    background: 'linear-gradient(135deg, rgba(156, 39, 176, 0.08), rgba(233, 30, 99, 0.05))',
-                                    border: '1px solid rgba(156, 39, 176, 0.15)',
-                                    borderRadius: '16px'
-                                  }}>
-                                    <h6 className="mb-3" style={{ fontWeight: '600', color: '#333', fontSize: isMobile ? '0.95rem' : '1.1rem' }}>
-                                      📊 Period Comparison
-                                    </h6>
-                                    <Row className="g-3">
-                                      <Col xs={12} md={4}>
-                                        <div className="text-center">
-                                          <small className="text-muted d-block mb-1">Current Period</small>
-                                          <strong style={{ color: '#6a39e4', fontSize: isMobile ? '1rem' : '1.1rem' }}>
-                                            {timeFilter === 'day' ? 'Last 24 Hours' : 
-                                             timeFilter === 'week' ? 'Last 7 Days' : 
-                                             timeFilter === 'month' ? 'Last 30 Days' : 'All Time'}
-                                          </strong>
-                                        </div>
-                                      </Col>
-                                      <Col xs={12} md={4}>
-                                        <div className="text-center">
-                                          <small className="text-muted d-block mb-1">Total Activities</small>
-                                          <strong style={{ color: '#333', fontSize: isMobile ? '1rem' : '1.1rem' }}>
-                                            {loadingEngagement ? '...' : 
-                                             (engagementData.totalQuizAttempts + engagementData.totalLessonCompletions).toLocaleString()
-                                            }
-                                          </strong>
-                                        </div>
-                                      </Col>
-                                      <Col xs={12} md={4}>
-                                        <div className="text-center">
-                                          <small className="text-muted d-block mb-1">Engagement Score</small>
-                                          <strong style={{ 
-                                            color: engagementData.completionRate >= 70 ? '#38a169' : 
-                                                   engagementData.completionRate >= 40 ? '#d69e2e' : '#e53e3e', 
-                                            fontSize: isMobile ? '1rem' : '1.1rem' 
-                                          }}>
-                                            {loadingEngagement ? '...' : 
-                                             engagementData.completionRate >= 70 ? 'High' :
-                                             engagementData.completionRate >= 40 ? 'Medium' : 'Low'
-                                            } ({engagementData.completionRate}%)
-                                          </strong>
-                                        </div>
-                                      </Col>
-                                    </Row>
-                                  </div>
-                                </Col>
-                              </Row>
+                              
                             </Card.Body>
                             <Card.Footer className="bg-transparent" style={{
                               borderTop: '1px solid rgba(0,0,0,0.04)',
@@ -1863,16 +1777,16 @@ const StatisticsPage = () => {
                             <Card.Header style={{
                               background: 'linear-gradient(90deg, rgba(66,99,235,0.08) 0%, rgba(38,222,129,0.08) 100%)',
                               fontWeight: '700',
-                              fontSize: isMobile ? '1.15rem' : '1.3rem',
+                              fontSize: isMobile ? '1.05rem' : '1.15rem',
                               color: '#333',
                               borderBottom: '1px solid rgba(0,0,0,0.04)',
                               display: 'flex',
                               alignItems: 'center',
-                              padding: isMobile ? '1rem' : '1.5rem',
+                              padding: isMobile ? '0.9rem' : '1.2rem',
                               borderRadius: '24px 24px 0 0'
                             }}>Enrollment Growth</Card.Header>
-                            <Card.Body className="d-flex flex-column flex-grow-1" style={{ padding: isMobile ? '1rem' : '2rem', background: 'rgba(255,255,255,0.95)', borderRadius: '0 0 24px 24px' }}>
-                              <div style={{ ...mobileChartContainerStyle, background: 'rgba(66,99,235,0.04)', borderRadius: '18px', boxShadow: '0 2px 12px rgba(66,99,235,0.05)', padding: isMobile ? '1rem' : '2rem', height: '350px' }}>
+                            <Card.Body className="d-flex flex-column flex-grow-1" style={{ padding: isMobile ? '0.9rem' : '1.5rem', background: 'rgba(255,255,255,0.95)', borderRadius: '0 0 24px 24px' }}>
+                              <div style={{ ...mobileChartContainerStyle, background: 'rgba(66,99,235,0.04)', borderRadius: '18px', boxShadow: '0 2px 12px rgba(66,99,235,0.05)', padding: isMobile ? '0.9rem' : '1.5rem', height: '300px' }}>
                                 <Line 
                                   data={{
                                     labels: (() => {
@@ -1963,22 +1877,22 @@ const StatisticsPage = () => {
                             <Card.Header style={{
                               background: 'linear-gradient(45deg, rgba(106, 57, 228, 0.08), rgba(115, 103, 240, 0.08))',
                               fontWeight: '700',
-                              fontSize: isMobile ? '1.15rem' : '1.3rem',
+                              fontSize: isMobile ? '1.05rem' : '1.15rem',
                               color: '#333',
                               borderBottom: '1px solid rgba(0,0,0,0.04)',
                               display: 'flex',
                               alignItems: 'center',
-                              padding: isMobile ? '1rem' : '1.5rem',
+                              padding: isMobile ? '0.9rem' : '1.2rem',
                               borderRadius: '24px 24px 0 0'
                             }}>Overall Performance</Card.Header>
-                            <Card.Body className="d-flex flex-column flex-grow-1" style={{ padding: isMobile ? '1rem' : '2rem', background: 'rgba(255,255,255,0.95)', borderRadius: '0 0 24px 24px' }}>
+                            <Card.Body className="d-flex flex-column flex-grow-1" style={{ padding: isMobile ? '0.9rem' : '1.5rem', background: 'rgba(255,255,255,0.95)', borderRadius: '0 0 24px 24px' }}>
                               <div style={{ 
                                 ...mobileChartContainerStyle, 
                                 background: 'rgba(106,57,228,0.04)', 
                                 borderRadius: '18px', 
                                 boxShadow: '0 2px 12px rgba(106,57,228,0.05)', 
-                                padding: isMobile ? '1rem' : '2rem', 
-                                height: '350px',
+                                padding: isMobile ? '0.9rem' : '1.5rem', 
+                                height: '300px',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center'
