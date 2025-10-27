@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { Container, Row, Col, Form, Button, Alert } from "react-bootstrap";
+import { FiEye, FiEyeOff } from 'react-icons/fi';
 import { colors } from "../styles/constants";
 import { supabase } from "../config/supabase";
 
@@ -223,6 +224,17 @@ export default function LoginPage() {
       setIsLoading(false);
     }
   };
+
+  // Keep password input type in sync with showPassword, using the ref as a fallback
+  useEffect(() => {
+    try {
+      if (passwordRef && passwordRef.current) {
+        passwordRef.current.type = showPassword ? 'text' : 'password';
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [showPassword]);
 
   return (
     <div
@@ -476,35 +488,35 @@ export default function LoginPage() {
 
                         {passwordError ? <div className="invalid-feedback d-block">{passwordError}</div> : null}
 
-                        {password && password.length > 0 ? (
-                          <span
-                            role="button"
-                            aria-label={showPassword ? "Hide password" : "Show password"}
-                            tabIndex={0}
-                            onClick={() => setShowPassword(!showPassword)}
-                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setShowPassword(!showPassword); }}
-                            title={showPassword ? "Hide password" : "Show password"}
-                            style={{
-                              position: "absolute",
-                              top: "50%",
-                              right: "10px",
-                              transform: "translateY(-50%)",
-                              color: "#152AC8",
-                              cursor: "pointer",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              padding: "2px 6px",
-                              borderRadius: "6px",
-                              fontSize: "0.78rem",
-                              fontWeight: 600,
-                              background: "transparent",
-                              boxSizing: "border-box"
-                            }}
-                          >
-                            {showPassword ? "Hide" : "Show"}
-                          </span>
-                        ) : null}
+                        <button
+                          type="button"
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                          title={showPassword ? "Hide password" : "Show password"}
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowPassword(prev => !prev); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowPassword(prev => !prev); } }}
+                          style={{
+                            position: "absolute",
+                            top: "50%",
+                            right: "10px",
+                            transform: "translateY(-50%)",
+                            color: "#152AC8",
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            padding: "6px",
+                            borderRadius: "8px",
+                            fontSize: "1rem",
+                            background: "transparent",
+                            border: 'none',
+                            boxSizing: "border-box"
+                          }}
+                        >
+                          {(!password || password.trim().length === 0)
+                            ? <FiEyeOff size={18} />
+                            : (showPassword ? <FiEye size={18} /> : <FiEyeOff size={18} />)
+                          }
+                        </button>
                       </div>
                     </Form.Group>
 
