@@ -3508,14 +3508,41 @@ const SubjectModulePage = () => {
         
         // Load existing questions
         if (editingQuiz.questions_data?.questions && editingQuiz.questions_data.questions.length > 0) {
-          const existingQuestions = editingQuiz.questions_data.questions.map((q, index) => ({
-            id: index + 1,
-            question: q.question || '',
-            options: q.options || ['', '', '', ''],
-            correctAnswer: q.correct_answer || 0,
-            image_url: q.image_url || null,
-            image_path: q.image_path || null
-          }));
+          const existingQuestions = editingQuiz.questions_data.questions.map((q, index) => {
+            let correctAnswerIndex = 0;
+            
+            // Handle different correct_answer formats that might exist in the database
+            if (q.correct_answer !== null && q.correct_answer !== undefined) {
+              // If it's already a number (0, 1, 2, 3), use it directly
+              if (typeof q.correct_answer === 'number') {
+                correctAnswerIndex = q.correct_answer;
+              }
+              // If it's a string number ("0", "1", "2", "3"), convert it
+              else if (typeof q.correct_answer === 'string' && /^\d+$/.test(q.correct_answer)) {
+                correctAnswerIndex = parseInt(q.correct_answer, 10);
+              }
+              // If it's a letter ("A", "B", "C", "D"), convert to index
+              else if (typeof q.correct_answer === 'string' && /^[A-D]$/i.test(q.correct_answer)) {
+                correctAnswerIndex = q.correct_answer.toUpperCase().charCodeAt(0) - 65;
+              }
+              // If it's the actual option text, find its index in the options array
+              else if (typeof q.correct_answer === 'string' && q.options && Array.isArray(q.options)) {
+                const foundIndex = q.options.findIndex(option => option === q.correct_answer);
+                if (foundIndex !== -1) {
+                  correctAnswerIndex = foundIndex;
+                }
+              }
+            }
+            
+            return {
+              id: index + 1,
+              question: q.question || '',
+              options: q.options || ['', '', '', ''],
+              correctAnswer: correctAnswerIndex,
+              image_url: q.image_url || null,
+              image_path: q.image_path || null
+            };
+          });
           setEditQuizQuestions(existingQuestions);
         } else {
           setEditQuizQuestions([
