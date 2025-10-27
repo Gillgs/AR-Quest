@@ -1576,11 +1576,28 @@ const handleFormSubmit = async (formData) => {
     }
   };
 
-  // Export selected rows (by ids) to CSV and trigger download
+  // Export rows (selected or all) to CSV and trigger download
   const handleExportSelected = async (ids = []) => {
+    // If no IDs provided, export all visible users based on active tab
     if (!Array.isArray(ids) || ids.length === 0) {
-      showAlertMessage('warning', 'No rows selected for export');
-      return;
+      let currentUsers = [];
+      
+      if (activeTab === 'parents') {
+        currentUsers = filteredParents;
+      } else if (activeTab === 'children') {
+        currentUsers = filteredStudents;
+      } else if (activeTab === 'teachers') {
+        currentUsers = filteredTeachers;
+      } else if (activeTab === 'admins') {
+        currentUsers = filteredAdmins;
+      }
+      
+      ids = currentUsers.map(user => user.id);
+      
+      if (ids.length === 0) {
+        showAlertMessage('warning', 'No data available for export');
+        return;
+      }
     }
     try {
       let rows = [];
@@ -1751,11 +1768,28 @@ const handleFormSubmit = async (formData) => {
     }
   };
 
-  // Export selected profiles as a comprehensive PDF report
+  // Export profiles (selected or all) as a comprehensive PDF report
   const handleExportPDF = async (ids = []) => {
+    // If no IDs provided, export all visible users based on active tab
     if (!Array.isArray(ids) || ids.length === 0) {
-      showAlertMessage('warning', 'No rows selected for export');
-      return;
+      let currentUsers = [];
+      
+      if (activeTab === 'parents') {
+        currentUsers = filteredParents;
+      } else if (activeTab === 'children') {
+        currentUsers = filteredStudents;
+      } else if (activeTab === 'teachers') {
+        currentUsers = filteredTeachers;
+      } else if (activeTab === 'admins') {
+        currentUsers = filteredAdmins;
+      }
+      
+      ids = currentUsers.map(user => user.id);
+      
+      if (ids.length === 0) {
+        showAlertMessage('warning', 'No data available for export');
+        return;
+      }
     }
     try {
       let rows = [];
@@ -2407,31 +2441,39 @@ const handleFormSubmit = async (formData) => {
       {/* Parents Section */}
       {activeTab === 'parents' && (
         <>
-          {/* Bulk toolbar */}
-          {selectedIds.size > 0 && (
-            <div className="bulk-toolbar d-flex justify-content-between align-items-center mb-2" style={{ marginBottom: '0.25rem', transform: 'translateY(6px)' }}>
-              <style>{`
-                .bulk-toolbar .btn-csv { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-csv:hover { background: rgba(40,199,111,0.08); border-color: rgba(40,199,111,0.12); }
-                .bulk-toolbar .btn-pdf { color: ${colors.primary}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
-                .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
-                .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-delete:hover { background: rgba(220,53,69,0.08); border-color: rgba(220,53,69,0.12); }
-              `}</style>
-              <div>{selectedIds.size} selected</div>
-              <div className="d-flex gap-2">
-                <Button size="sm" className="btn-csv" onClick={() => handleExportSelected([...selectedIds])}>Export CSV</Button>
-                <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF([...selectedIds])}>Export PDF</Button>
-                <Button size="sm" className="btn-delete" onClick={() => handleShowModal('bulk-delete', [...selectedIds])}>
-                  <FiTrash2 size={14} className="me-1" />
-                  Delete Selected
-                </Button>
-                <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
-              </div>
+          {/* Toolbar */}
+          <div className="bulk-toolbar d-flex justify-content-between align-items-center mb-2" style={{ marginBottom: '0.25rem', transform: 'translateY(6px)' }}>
+            <style>{`
+              .bulk-toolbar .btn-csv { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
+              .bulk-toolbar .btn-csv:hover { background: rgba(40,199,111,0.08); border-color: rgba(40,199,111,0.12); }
+              .bulk-toolbar .btn-pdf { color: ${colors.primary}; border: 1px solid transparent; background: transparent; }
+              .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
+              .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
+              .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
+              .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
+              .bulk-toolbar .btn-delete:hover { background: rgba(220,53,69,0.08); border-color: rgba(220,53,69,0.12); }
+            `}</style>
+            <div>
+              {selectedIds.size > 0 ? `${selectedIds.size} selected` : `${users.length} total`}
             </div>
-          )}
+            <div className="d-flex gap-2">
+              <Button size="sm" className="btn-csv" onClick={() => handleExportSelected(selectedIds.size > 0 ? [...selectedIds] : [])}>
+                Export CSV {selectedIds.size > 0 ? '(Selected)' : '(All)'}
+              </Button>
+              <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF(selectedIds.size > 0 ? [...selectedIds] : [])}>
+                Export PDF {selectedIds.size > 0 ? '(Selected)' : '(All)'}
+              </Button>
+              {selectedIds.size > 0 && (
+                <>
+                  <Button size="sm" className="btn-delete" onClick={() => handleShowModal('bulk-delete', [...selectedIds])}>
+                    <FiTrash2 size={14} className="me-1" />
+                    Delete Selected
+                  </Button>
+                  <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
+                </>
+              )}
+            </div>
+          </div>
           <Table bordered hover responsive className="mt-3 pretty-table" style={{ borderRadius: '16px', boxShadow: '0 4px 16px rgba(33,147,176,0.08)' }}>
             <thead style={{ background: 'linear-gradient(90deg, #f3fafd 80%, #eaf6fb 100%)', borderRadius: '16px' }}>
               <tr>
@@ -2501,31 +2543,39 @@ const handleFormSubmit = async (formData) => {
       {/* Children Section */}
       {activeTab === 'children' && (
         <>
-          {/* Bulk toolbar */}
-          {selectedIds.size > 0 && (
-            <div className="bulk-toolbar d-flex justify-content-between align-items-center mb-2" style={{ marginBottom: '0.25rem', transform: 'translateY(6px)' }}>
-              <style>{`
-                .bulk-toolbar .btn-csv { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-csv:hover { background: rgba(40,199,111,0.08); border-color: rgba(40,199,111,0.12); }
-                .bulk-toolbar .btn-pdf { color: ${colors.primary}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
-                .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
-                .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-delete:hover { background: rgba(220,53,69,0.08); border-color: rgba(220,53,69,0.12); }
-              `}</style>
-              <div>{selectedIds.size} selected</div>
-              <div className="d-flex gap-2">
-                <Button size="sm" className="btn-csv" onClick={() => handleExportSelected([...selectedIds])}>Export CSV</Button>
-                <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF([...selectedIds])}>Export PDF</Button>
-                <Button size="sm" className="btn-delete" onClick={() => handleShowModal('bulk-delete', [...selectedIds])}>
-                  <FiTrash2 size={14} className="me-1" />
-                  Delete Selected
-                </Button>
-                <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
-              </div>
+          {/* Toolbar */}
+          <div className="bulk-toolbar d-flex justify-content-between align-items-center mb-2" style={{ marginBottom: '0.25rem', transform: 'translateY(6px)' }}>
+            <style>{`
+              .bulk-toolbar .btn-csv { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
+              .bulk-toolbar .btn-csv:hover { background: rgba(40,199,111,0.08); border-color: rgba(40,199,111,0.12); }
+              .bulk-toolbar .btn-pdf { color: ${colors.primary}; border: 1px solid transparent; background: transparent; }
+              .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
+              .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
+              .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
+              .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
+              .bulk-toolbar .btn-delete:hover { background: rgba(220,53,69,0.08); border-color: rgba(220,53,69,0.12); }
+            `}</style>
+            <div>
+              {selectedIds.size > 0 ? `${selectedIds.size} selected` : `${users.length} total`}
             </div>
-          )}
+            <div className="d-flex gap-2">
+              <Button size="sm" className="btn-csv" onClick={() => handleExportSelected(selectedIds.size > 0 ? [...selectedIds] : [])}>
+                Export CSV {selectedIds.size > 0 ? '(Selected)' : '(All)'}
+              </Button>
+              <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF(selectedIds.size > 0 ? [...selectedIds] : [])}>
+                Export PDF {selectedIds.size > 0 ? '(Selected)' : '(All)'}
+              </Button>
+              {selectedIds.size > 0 && (
+                <>
+                  <Button size="sm" className="btn-delete" onClick={() => handleShowModal('bulk-delete', [...selectedIds])}>
+                    <FiTrash2 size={14} className="me-1" />
+                    Delete Selected
+                  </Button>
+                  <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
+                </>
+              )}
+            </div>
+          </div>
           <Table bordered hover responsive className="mt-3 pretty-table" style={{ borderRadius: '16px', boxShadow: '0 4px 16px rgba(255,193,7,0.08)' }}>
             <thead style={{ background: 'linear-gradient(90deg, #fffdf2 80%, #fffbf0 100%)', borderRadius: '16px' }}>
               <tr>
@@ -2614,31 +2664,39 @@ const handleFormSubmit = async (formData) => {
       {/* Teachers Section */}
       {activeTab === 'teachers' && (
         <>
-          {/* Bulk toolbar */}
-          {selectedIds.size > 0 && (
-            <div className="bulk-toolbar d-flex justify-content-between align-items-center mb-2" style={{ marginBottom: '0.25rem', transform: 'translateY(6px)' }}>
-              <style>{`
-                .bulk-toolbar .btn-csv { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-csv:hover { background: rgba(40,199,111,0.08); border-color: rgba(40,199,111,0.12); }
-                .bulk-toolbar .btn-pdf { color: ${colors.primary}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
-                .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
-                .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-delete:hover { background: rgba(220,53,69,0.08); border-color: rgba(220,53,69,0.12); }
-              `}</style>
-              <div>{selectedIds.size} selected</div>
-              <div className="d-flex gap-2">
-                <Button size="sm" className="btn-csv" onClick={() => handleExportSelected([...selectedIds])}>Export CSV</Button>
-                <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF([...selectedIds])}>Export PDF</Button>
-                <Button size="sm" className="btn-delete" onClick={() => handleShowModal('bulk-delete', [...selectedIds])}>
-                  <FiTrash2 size={14} className="me-1" />
-                  Delete Selected
-                </Button>
-                <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
-              </div>
+          {/* Toolbar */}
+          <div className="bulk-toolbar d-flex justify-content-between align-items-center mb-2" style={{ marginBottom: '0.25rem', transform: 'translateY(6px)' }}>
+            <style>{`
+              .bulk-toolbar .btn-csv { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
+              .bulk-toolbar .btn-csv:hover { background: rgba(40,199,111,0.08); border-color: rgba(40,199,111,0.12); }
+              .bulk-toolbar .btn-pdf { color: ${colors.primary}; border: 1px solid transparent; background: transparent; }
+              .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
+              .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
+              .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
+              .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
+              .bulk-toolbar .btn-delete:hover { background: rgba(220,53,69,0.08); border-color: rgba(220,53,69,0.12); }
+            `}</style>
+            <div>
+              {selectedIds.size > 0 ? `${selectedIds.size} selected` : `${users.length} total`}
             </div>
-          )}
+            <div className="d-flex gap-2">
+              <Button size="sm" className="btn-csv" onClick={() => handleExportSelected(selectedIds.size > 0 ? [...selectedIds] : [])}>
+                Export CSV {selectedIds.size > 0 ? '(Selected)' : '(All)'}
+              </Button>
+              <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF(selectedIds.size > 0 ? [...selectedIds] : [])}>
+                Export PDF {selectedIds.size > 0 ? '(Selected)' : '(All)'}
+              </Button>
+              {selectedIds.size > 0 && (
+                <>
+                  <Button size="sm" className="btn-delete" onClick={() => handleShowModal('bulk-delete', [...selectedIds])}>
+                    <FiTrash2 size={14} className="me-1" />
+                    Delete Selected
+                  </Button>
+                  <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
+                </>
+              )}
+            </div>
+          </div>
           <Table bordered hover responsive className="mt-3 pretty-table" style={{ borderRadius: '16px', boxShadow: '0 4px 16px rgba(151,247,151,0.08)' }}>
             <thead style={{ background: 'linear-gradient(90deg, #f6fcf6 80%, #eafbe6 100%)', borderRadius: '16px' }}>
               <tr>
