@@ -131,6 +131,41 @@ const AdminPage = () => {
   const [editChildErrors, setEditChildErrors] = useState({});
   const [selectedChild, setSelectedChild] = useState(null);
 
+  // Password strength calculation
+  const calculatePasswordStrength = (password) => {
+    if (!password) return { score: 0, label: '', color: '' };
+    
+    let score = 0;
+    const checks = {
+      length: password.length >= 8, // Minimum 8 characters
+      lowercase: /[a-z]/.test(password),
+      uppercase: /[A-Z]/.test(password),
+      numbers: /\d/.test(password),
+      symbols: /[^A-Za-z0-9]/.test(password),
+      noCommonPatterns: !/^(password|123456|qwerty|admin|letmein|welcome|iloveyou)/i.test(password)
+    };
+    
+    // Score calculation - each check contributes ~16.67% to total score (6 checks = 100%)
+    Object.values(checks).forEach(check => {
+      if (check) score += 16.67;
+    });
+    
+    // Determine strength level
+    let label, color;
+    if (score < 40) {
+      label = 'Weak';
+      color = '#dc3545'; // Red
+    } else if (score < 80) {
+      label = 'Good';
+      color = '#ffc107'; // Yellow
+    } else {
+      label = 'Excellent';
+      color = '#28a745'; // Green
+    }
+    
+    return { score: Math.round(score), label, color };
+  };
+
   // Helpers to check local form validity (used to disable submit buttons)
   const isChildFormValid = (form) => {
     if (!form) return false;
@@ -356,6 +391,9 @@ const AdminPage = () => {
         return sorted.sort((a, b) => new Date(b.date_of_birth || 0) - new Date(a.date_of_birth || 0));
       case 'age-oldest':
         return sorted.sort((a, b) => new Date(a.date_of_birth || 0) - new Date(b.date_of_birth || 0));
+      case 'no-section':
+        // Return only students without a section assignment
+        return sorted.filter(s => !s.section_id && s.section_id !== 0 && s.section_id !== '0');
       default:
         return sorted;
     }
@@ -563,8 +601,11 @@ const handleFormSubmit = async (formData) => {
       
       if (!formData.password?.trim()) {
         errors.password = 'Password is required';
-      } else if (formData.password.length < 8) {
-        errors.password = 'Password must be at least 8 characters';
+      } else {
+        const strength = calculatePasswordStrength(formData.password);
+        if (strength.score < 80) {
+          errors.password = 'Password does not meet security requirements';
+        }
       }
     }
     
@@ -623,8 +664,11 @@ const handleFormSubmit = async (formData) => {
       if (formData.emailaddress && formData.emailaddress.trim() && !/\S+@\S+\.\S+/.test(formData.emailaddress)) {
         errors.emailaddress = 'Invalid email address';
       }
-      if (formData.password && formData.password.trim() && formData.password.length < 8) {
-        errors.password = 'Password must be at least 8 characters';
+      if (formData.password && formData.password.trim()) {
+        const strength = calculatePasswordStrength(formData.password);
+        if (strength.score < 80) {
+          errors.password = 'Password does not meet security requirements';
+        }
       }
       if (formData.contactnumber && formData.contactnumber.trim()) {
         const phoneRegex = /^0\d{10}$/;
@@ -1559,48 +1603,104 @@ const handleFormSubmit = async (formData) => {
         }));
 
       } else if (activeTab === 'parents') {
-        // For parents, match the table columns exactly
+        // For parents, include their children information
         const { data: profileData, error } = await supabaseAdmin
           .from('user_profiles')
           .select('id, username, first_name, middle_name, last_name, email, contact, role, created_at')
           .in('id', ids);
         if (error) throw error;
 
-        headers = ['id', 'username', 'name', 'email', 'contact', 'children_count', 'role'];
+        headers = ['parent_id', 'parent_name', 'email', 'contact', 'username', 'child_name', 'child_section', 'child_teacher', 'child_birth_date', 'child_enrollment_date'];
 
-        rows = (profileData || []).map(parent => {
+        rows = [];
+        (profileData || []).forEach((parent, parentIdx) => {
           const parentChildren = students.filter(student => student.parent_id === parent.id);
-          return {
-            id: String(parent.id).slice(-8), // Show last 8 chars of ID for display
-            username: parent.username || '',
-            name: `${parent.first_name || ''} ${parent.middle_name || ''} ${parent.last_name || ''}`.trim(),
-            email: parent.email || '',
-            contact: parent.contact || '',
-            children_count: parentChildren.length,
-            role: parent.role || ''
-          };
+          const parentName = `${parent.first_name || ''} ${parent.middle_name || ''} ${parent.last_name || ''}`.trim();
+          
+          if (parentChildren.length > 0) {
+            // Add a row for each child
+            parentChildren.forEach(child => {
+              rows.push({
+                parent_id: parentIdx + 1,
+                parent_name: parentName,
+                email: parent.email || '',
+                contact: parent.contact || '',
+                username: parent.username || '',
+                child_name: `${child.first_name || ''} ${child.middle_name || child.middlename || ''} ${child.last_name || ''}`.trim(),
+                child_section: child.section_name || 'No Section',
+                child_teacher: child.teacher_name || 'No Teacher',
+                child_birth_date: child.date_of_birth || '',
+                child_enrollment_date: child.enrollment_date || ''
+              });
+            });
+          } else {
+            // Parent with no children
+            rows.push({
+              parent_id: parentIdx + 1,
+              parent_name: parentName,
+              email: parent.email || '',
+              contact: parent.contact || '',
+              username: parent.username || '',
+              child_name: 'No children',
+              child_section: '',
+              child_teacher: '',
+              child_birth_date: '',
+              child_enrollment_date: ''
+            });
+          }
         });
 
       } else if (activeTab === 'teachers') {
-        // For teachers, match the table columns exactly
+        // For teachers, include their students information
         const { data: profileData, error } = await supabaseAdmin
           .from('user_profiles')
           .select('id, username, first_name, middle_name, last_name, email, contact, role')
           .in('id', ids);
         if (error) throw error;
 
-        headers = ['teacher_id', 'name', 'email', 'contact', 'assigned_section', 'student_count'];
+        headers = ['teacher_id', 'teacher_name', 'email', 'contact', 'assigned_section', 'student_name', 'student_parent', 'student_birth_date', 'student_enrollment_date'];
 
-        rows = (profileData || []).map((teacher, idx) => {
+        rows = [];
+        (profileData || []).forEach((teacher, teacherIdx) => {
           const teacherData = teachers.find(t => t.id === teacher.id);
-          return {
-            teacher_id: idx + 1, // Sequential ID as shown in table
-            name: `${teacher.first_name || ''} ${teacher.middle_name || ''} ${teacher.last_name || ''}`.trim(),
-            email: teacher.email || '',
-            contact: teacher.contact || '',
-            assigned_section: teacherData?.assigned_section || 'Not Assigned',
-            student_count: teacherData?.student_count || 0
-          };
+          const teacherName = `${teacher.first_name || ''} ${teacher.middle_name || ''} ${teacher.last_name || ''}`.trim();
+          
+          // Find students in teacher's assigned section
+          const teacherStudents = students.filter(student => {
+            // Match by section - find students in the section assigned to this teacher
+            const assignedSection = teacherData?.assigned_section;
+            return assignedSection && student.section_name === assignedSection;
+          });
+          
+          if (teacherStudents.length > 0) {
+            // Add a row for each student
+            teacherStudents.forEach(student => {
+              rows.push({
+                teacher_id: teacherIdx + 1,
+                teacher_name: teacherName,
+                email: teacher.email || '',
+                contact: teacher.contact || '',
+                assigned_section: teacherData?.assigned_section || 'Not Assigned',
+                student_name: `${student.first_name || ''} ${student.middle_name || student.middlename || ''} ${student.last_name || ''}`.trim(),
+                student_parent: `${student.parent_first_name || ''} ${student.parent_middle_name || ''} ${student.parent_last_name || ''}`.trim() || 'Not assigned',
+                student_birth_date: student.date_of_birth || '',
+                student_enrollment_date: student.enrollment_date || ''
+              });
+            });
+          } else {
+            // Teacher with no students
+            rows.push({
+              teacher_id: teacherIdx + 1,
+              teacher_name: teacherName,
+              email: teacher.email || '',
+              contact: teacher.contact || '',
+              assigned_section: teacherData?.assigned_section || 'Not Assigned',
+              student_name: 'No students',
+              student_parent: '',
+              student_birth_date: '',
+              student_enrollment_date: ''
+            });
+          }
         });
 
       } else if (activeTab === 'admins') {
@@ -1675,44 +1775,100 @@ const handleFormSubmit = async (formData) => {
         }));
 
       } else if (activeTab === 'parents') {
-        // Match the table columns exactly
+        // For parents, include their children information
         const { data: profileData, error } = await supabaseAdmin
           .from('user_profiles')
           .select('id, username, first_name, middle_name, last_name, email, contact, role, created_at')
           .in('id', ids);
         if (error) throw error;
 
-        rows = (profileData || []).map((parent, idx) => {
+        rows = [];
+        (profileData || []).forEach((parent, parentIdx) => {
           const parentChildren = students.filter(student => student.parent_id === parent.id);
-          return {
-            id: idx + 1,
-            username: parent.username || 'N/A',
-            name: `${parent.first_name || ''} ${parent.middle_name || ''} ${parent.last_name || ''}`.trim(),
-            email: parent.email || 'N/A',
-            contact: parent.contact || 'N/A',
-            children_count: parentChildren.length,
-            role: parent.role || ''
-          };
+          const parentName = `${parent.first_name || ''} ${parent.middle_name || ''} ${parent.last_name || ''}`.trim();
+          
+          if (parentChildren.length > 0) {
+            // Add a row for each child
+            parentChildren.forEach(child => {
+              rows.push({
+                parent_id: parentIdx + 1,
+                parent_name: parentName,
+                email: parent.email || 'N/A',
+                contact: parent.contact || 'N/A',
+                username: parent.username || 'N/A',
+                child_name: `${child.first_name || ''} ${child.middle_name || child.middlename || ''} ${child.last_name || ''}`.trim(),
+                child_section: child.section_name || 'No Section',
+                child_teacher: child.teacher_name || 'No Teacher',
+                child_birth_date: child.date_of_birth ? new Date(child.date_of_birth).toLocaleDateString() : 'N/A',
+                child_enrollment_date: child.enrollment_date ? new Date(child.enrollment_date).toLocaleDateString() : 'N/A'
+              });
+            });
+          } else {
+            // Parent with no children
+            rows.push({
+              parent_id: parentIdx + 1,
+              parent_name: parentName,
+              email: parent.email || 'N/A',
+              contact: parent.contact || 'N/A',
+              username: parent.username || 'N/A',
+              child_name: 'No children',
+              child_section: '',
+              child_teacher: '',
+              child_birth_date: '',
+              child_enrollment_date: ''
+            });
+          }
         });
 
       } else if (activeTab === 'teachers') {
-        // Match the table columns exactly
+        // For teachers, include their students information
         const { data: profileData, error } = await supabaseAdmin
           .from('user_profiles')
           .select('id, username, first_name, middle_name, last_name, email, contact, role')
           .in('id', ids);
         if (error) throw error;
 
-        rows = (profileData || []).map((teacher, idx) => {
+        rows = [];
+        (profileData || []).forEach((teacher, teacherIdx) => {
           const teacherData = teachers.find(t => t.id === teacher.id);
-          return {
-            id: idx + 1,
-            name: `${teacher.first_name || ''} ${teacher.middle_name || ''} ${teacher.last_name || ''}`.trim(),
-            email: teacher.email || 'N/A',
-            contact: teacher.contact || 'N/A',
-            assigned_section: teacherData?.assigned_section || 'Not Assigned',
-            student_count: teacherData?.student_count || 0
-          };
+          const teacherName = `${teacher.first_name || ''} ${teacher.middle_name || ''} ${teacher.last_name || ''}`.trim();
+          
+          // Find students in teacher's assigned section
+          const teacherStudents = students.filter(student => {
+            // Match by section - find students in the section assigned to this teacher
+            const assignedSection = teacherData?.assigned_section;
+            return assignedSection && student.section_name === assignedSection;
+          });
+          
+          if (teacherStudents.length > 0) {
+            // Add a row for each student
+            teacherStudents.forEach(student => {
+              rows.push({
+                teacher_id: teacherIdx + 1,
+                teacher_name: teacherName,
+                email: teacher.email || 'N/A',
+                contact: teacher.contact || 'N/A',
+                assigned_section: teacherData?.assigned_section || 'Not Assigned',
+                student_name: `${student.first_name || ''} ${student.middle_name || student.middlename || ''} ${student.last_name || ''}`.trim(),
+                student_parent: `${student.parent_first_name || ''} ${student.parent_middle_name || ''} ${student.parent_last_name || ''}`.trim() || 'Not assigned',
+                student_birth_date: student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : 'N/A',
+                student_enrollment_date: student.enrollment_date ? new Date(student.enrollment_date).toLocaleDateString() : 'N/A'
+              });
+            });
+          } else {
+            // Teacher with no students
+            rows.push({
+              teacher_id: teacherIdx + 1,
+              teacher_name: teacherName,
+              email: teacher.email || 'N/A',
+              contact: teacher.contact || 'N/A',
+              assigned_section: teacherData?.assigned_section || 'Not Assigned',
+              student_name: 'No students',
+              student_parent: '',
+              student_birth_date: '',
+              student_enrollment_date: ''
+            });
+          }
         });
 
       } else if (activeTab === 'admins') {
@@ -1844,11 +2000,11 @@ const handleFormSubmit = async (formData) => {
         cols = ['Student ID', 'Name', 'Parent', 'Section', 'Teacher', 'Birth Date', 'Enrollment Date'];
         colWidths = ['14%', '20%', '20%', '14%', '16%', '8%', '8%'];
       } else if (activeTab === 'parents') {
-        cols = ['ID', 'Username', 'Name', 'Email', 'Contact', 'Children', 'Role'];
-        colWidths = ['8%', '15%', '22%', '25%', '15%', '8%', '7%'];
+        cols = ['Parent ID', 'Parent Name', 'Email', 'Contact', 'Username', 'Child Name', 'Child Section', 'Child Teacher', 'Child Birth Date', 'Child Enrollment'];
+        colWidths = ['8%', '15%', '15%', '10%', '10%', '15%', '10%', '10%', '7%', '10%'];
       } else if (activeTab === 'teachers') {
-        cols = ['Teacher ID', 'Teacher Name', 'Email', 'Contact', 'Assigned Section', 'Students Count'];
-        colWidths = ['12%', '22%', '28%', '15%', '15%', '8%'];
+        cols = ['Teacher ID', 'Teacher Name', 'Email', 'Contact', 'Section', 'Student Name', 'Student Parent', 'Student Birth', 'Student Enrollment'];
+        colWidths = ['8%', '15%', '15%', '10%', '10%', '15%', '12%', '8%', '7%'];
       } else {
         cols = ['Admin ID', 'Admin Name', 'Email', 'Contact', 'Role', 'Created At'];
         colWidths = ['10%', '20%', '30%', '15%', '10%', '15%'];
@@ -1893,22 +2049,28 @@ const handleFormSubmit = async (formData) => {
           ];
         } else if (activeTab === 'parents') {
           values = [
-            String(r.id || idx + 1),
-            r.username || 'N/A',
-            r.name || 'N/A',
+            String(r.parent_id || idx + 1),
+            r.parent_name || 'N/A',
             r.email || 'N/A',
             r.contact || 'N/A',
-            String(r.children_count || 0),
-            r.role || ''
+            r.username || 'N/A',
+            r.child_name || 'N/A',
+            r.child_section || 'N/A',
+            r.child_teacher || 'N/A',
+            r.child_birth_date || 'N/A',
+            r.child_enrollment_date || 'N/A'
           ];
         } else if (activeTab === 'teachers') {
           values = [
-            String(r.id || idx + 1),
-            r.name || 'N/A',
+            String(r.teacher_id || idx + 1),
+            r.teacher_name || 'N/A',
             r.email || 'N/A',
             r.contact || 'N/A',
             r.assigned_section || 'Not Assigned',
-            String(r.student_count || 0)
+            r.student_name || 'N/A',
+            r.student_parent || 'N/A',
+            r.student_birth_date || 'N/A',
+            r.student_enrollment_date || 'N/A'
           ];
         } else {
           values = [
@@ -1935,17 +2097,9 @@ const handleFormSubmit = async (formData) => {
           td.style.color = '#2c3e50';
           td.style.textAlign = 'left';
           
-          // Special styling for count columns
-          if ((activeTab === 'parents' && cellIdx === 5) || 
-              (activeTab === 'teachers' && cellIdx === 5)) {
-            td.style.textAlign = 'center';
-            td.style.fontWeight = '700';
-            td.style.color = text === '0' ? '#95a5a6' : '#3498db';
-            td.style.fontSize = '9px';
-          }
-          
           // Special styling for section/teacher assignment
           if ((activeTab === 'children' && (cellIdx === 3 || cellIdx === 4)) ||
+              (activeTab === 'parents' && (cellIdx === 6 || cellIdx === 7)) ||
               (activeTab === 'teachers' && cellIdx === 4)) {
             if (text.includes('No ') || text.includes('Not ')) {
               td.style.color = '#e67e22';
@@ -1956,9 +2110,20 @@ const handleFormSubmit = async (formData) => {
             }
           }
           
+          // Special styling for child/student names
+          if ((activeTab === 'parents' && cellIdx === 5) ||
+              (activeTab === 'teachers' && cellIdx === 5)) {
+            if (text === 'No children' || text === 'No students') {
+              td.style.color = '#95a5a6';
+              td.style.fontStyle = 'italic';
+            } else {
+              td.style.color = '#2c3e50';
+              td.style.fontWeight = '600';
+            }
+          }
+          
           // Special styling for role column
-          if ((activeTab === 'parents' && cellIdx === 6) || 
-              (activeTab === 'admins' && cellIdx === 4)) {
+          if (activeTab === 'admins' && cellIdx === 4) {
             const roleColors = {
               'parent': '#dc3545',
               'admin': '#007bff'
@@ -2252,14 +2417,11 @@ const handleFormSubmit = async (formData) => {
                 .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
                 .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
                 .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
-                .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-delete:hover { background: rgba(234,84,85,0.06); border-color: rgba(234,84,85,0.10); }
               `}</style>
               <div>{selectedIds.size} selected</div>
               <div className="d-flex gap-2">
                 <Button size="sm" className="btn-csv" onClick={() => handleExportSelected([...selectedIds])}>Export CSV</Button>
                 <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF([...selectedIds])}>Export PDF</Button>
-                <Button size="sm" className="btn-delete" onClick={() => { setModalAction({ type: 'bulk-delete', data: [...selectedIds] }); setShowDeleteModal(true); }}>Delete Selected</Button>
                 <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
               </div>
             </div>
@@ -2333,110 +2495,57 @@ const handleFormSubmit = async (formData) => {
       {/* Children Section */}
       {activeTab === 'children' && (
         <>
-          {/* Bulk toolbar */}
-          {selectedIds.size > 0 && (
-            <div className="bulk-toolbar d-flex justify-content-between align-items-center mb-2" style={{ marginBottom: '0.25rem', transform: 'translateY(6px)' }}>
-              <style>{`
-                .bulk-toolbar .btn-csv { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-csv:hover { background: rgba(40,199,111,0.08); border-color: rgba(40,199,111,0.12); }
-                .bulk-toolbar .btn-pdf { color: ${colors.primary}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
-                .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
-                .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-delete:hover { background: rgba(234,84,85,0.06); border-color: rgba(234,84,85,0.10); }
-              `}</style>
-              <div>{selectedIds.size} selected</div>
-              <div className="d-flex gap-2">
-                <Button size="sm" className="btn-csv" onClick={() => handleExportSelected([...selectedIds])}>Export CSV</Button>
-                <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF([...selectedIds])}>Export PDF</Button>
-                <Button size="sm" className="btn-delete" onClick={() => { setModalAction({ type: 'bulk-delete', data: [...selectedIds] }); setShowDeleteModal(true); }}>Delete Selected</Button>
-                <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
-              </div>
-            </div>
-          )}
           <Table bordered hover responsive className="mt-3 pretty-table" style={{ borderRadius: '16px', boxShadow: '0 4px 16px rgba(255,193,7,0.08)' }}>
             <thead style={{ background: 'linear-gradient(90deg, #fffdf2 80%, #fffbf0 100%)', borderRadius: '16px' }}>
               <tr>
-                <th style={{ backgroundColor: '#fffdf2', borderTopLeftRadius: '16px', width: 48 }}>
-                  <input
-                    type="checkbox"
-                    checked={students.length > 0 && students.every(u => selectedIds.has(u.id))}
-                    onChange={(e) => {
-                      const newSet = new Set(selectedIds);
-                      if (e.target.checked) {
-                        students.forEach(u => newSet.add(u.id));
-                        setSelectAllOnPage(true);
-                      } else {
-                        students.forEach(u => newSet.delete(u.id));
-                        setSelectAllOnPage(false);
-                      }
-                      setSelectedIds(newSet);
-                    }}
-                    aria-label="Select all on page"
-                  />
-                </th>
-                <th style={{ backgroundColor: '#fffdf2' }}>Student ID</th>
-              <th style={{ backgroundColor: '#fffdf2' }}>Name</th>
-              <th style={{ backgroundColor: '#fffdf2' }}>Parent</th>
-              <th style={{ backgroundColor: '#fffdf2' }}>Section</th>
-              <th style={{ backgroundColor: '#fffdf2' }}>Teacher</th>
-              <th style={{ backgroundColor: '#fffdf2' }}>Birth Date</th>
-              <th style={{ backgroundColor: '#fffdf2' }}>Enrollment Date</th>
-              <th style={{ backgroundColor: '#fffdf2', borderTopRightRadius: '16px', textAlign: 'center' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((student, idx) => (
-              <tr key={student.id} style={{ background: '#fffdf2', borderRadius: '12px', transition: 'box-shadow 0.2s', boxShadow: '0 2px 8px rgba(255,193,7,0.08)' }}>
-                <td style={{ width: 48 }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(student.id)}
-                    onChange={(e) => {
-                      const newSet = new Set(selectedIds);
-                      if (e.target.checked) newSet.add(student.id);
-                      else newSet.delete(student.id);
-                      setSelectedIds(newSet);
-                    }}
-                    aria-label={`Select ${student.first_name} ${student.last_name}`}
-                  />
-                </td>
-                <td>{student.student_id || `STU-${idx + 1}`}</td>
-                <td>{`${student.first_name || ''}${student.middle_name || student.middlename ? ' ' + (student.middle_name || student.middlename) : ''} ${student.last_name || ''}`.trim()}</td>
-                <td>{`${student.parent_first_name || ''}${student.parent_middle_name ? ' ' + student.parent_middle_name : ''} ${student.parent_last_name || ''}`.trim() || 'Not assigned'}</td>
-                <td>
-                  {student.section_name ? (
-                    <Badge bg="info" style={{ borderRadius: '12px', padding: '6px 12px' }}>
-                      {student.section_name}
-                    </Badge>
-                  ) : (
-                    <Badge bg="secondary" style={{ borderRadius: '12px', padding: '6px 12px' }}>
-                      No Section
-                    </Badge>
-                  )}
-                </td>
-                <td>
-                  {student.teacher_name ? (
-                    <Badge bg="success" style={{ borderRadius: '12px', padding: '6px 12px' }}>
-                      {student.teacher_name}
-                    </Badge>
-                  ) : (
-                    <Badge bg="warning" style={{ borderRadius: '12px', padding: '6px 12px', color: '#000' }}>
-                      No Teacher
-                    </Badge>
-                  )}
-                </td>
-                <td>{student.date_of_birth || '-'}</td>
-                <td>{student.enrollment_date || '-'}</td>
-                <td style={{ textAlign: 'center' }}>
-                  <Button variant="outline-info" size="sm" className="edit-btn" style={{ borderRadius: '20px', background: 'transparent', marginRight: '6px' }} onClick={() => handleEditChild(student)}><FiEdit2 /></Button>
-                  <Button variant="outline-danger" size="sm" className="delete-btn" style={{ borderRadius: '20px', background: 'transparent' }} onClick={() => handleDeleteChild(student)}><FiTrash2 /></Button>
-                </td>
+                <th style={{ backgroundColor: '#fffdf2', borderTopLeftRadius: '16px' }}>Student ID</th>
+                <th style={{ backgroundColor: '#fffdf2' }}>Name</th>
+                <th style={{ backgroundColor: '#fffdf2' }}>Parent</th>
+                <th style={{ backgroundColor: '#fffdf2' }}>Section</th>
+                <th style={{ backgroundColor: '#fffdf2' }}>Teacher</th>
+                <th style={{ backgroundColor: '#fffdf2' }}>Birth Date</th>
+                <th style={{ backgroundColor: '#fffdf2' }}>Enrollment Date</th>
+                <th style={{ backgroundColor: '#fffdf2', borderTopRightRadius: '16px', textAlign: 'center' }}>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </Table>
+            </thead>
+            <tbody>
+              {users.map((student, idx) => (
+                <tr key={student.id} style={{ background: '#fffdf2', borderRadius: '12px', transition: 'box-shadow 0.2s', boxShadow: '0 2px 8px rgba(255,193,7,0.08)' }}>
+                  <td>{student.student_id || `STU-${idx + 1}`}</td>
+                  <td>{`${student.first_name || ''}${student.middle_name || student.middlename ? ' ' + (student.middle_name || student.middlename) : ''} ${student.last_name || ''}`.trim()}</td>
+                  <td>{`${student.parent_first_name || ''}${student.parent_middle_name ? ' ' + student.parent_middle_name : ''} ${student.parent_last_name || ''}`.trim() || 'Not assigned'}</td>
+                  <td>
+                    {student.section_name ? (
+                      <Badge bg="info" style={{ borderRadius: '12px', padding: '6px 12px' }}>
+                        {student.section_name}
+                      </Badge>
+                    ) : (
+                      <Badge bg="secondary" style={{ borderRadius: '12px', padding: '6px 12px' }}>
+                        No Section
+                      </Badge>
+                    )}
+                  </td>
+                  <td>
+                    {student.teacher_name ? (
+                      <Badge bg="success" style={{ borderRadius: '12px', padding: '6px 12px' }}>
+                        {student.teacher_name}
+                      </Badge>
+                    ) : (
+                      <Badge bg="warning" style={{ borderRadius: '12px', padding: '6px 12px', color: '#000' }}>
+                        No Teacher
+                      </Badge>
+                    )}
+                  </td>
+                  <td>{student.date_of_birth || '-'}</td>
+                  <td>{student.enrollment_date || '-'}</td>
+                  <td style={{ textAlign: 'center' }}>
+                    <Button variant="outline-info" size="sm" className="edit-btn" style={{ borderRadius: '20px', background: 'transparent', marginRight: '6px' }} onClick={() => handleEditChild(student)}><FiEdit2 /></Button>
+                    <Button variant="outline-danger" size="sm" className="delete-btn" style={{ borderRadius: '20px', background: 'transparent' }} onClick={() => handleDeleteChild(student)}><FiTrash2 /></Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
         </>
       )}
 
@@ -2453,14 +2562,11 @@ const handleFormSubmit = async (formData) => {
                 .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
                 .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
                 .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
-                .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-delete:hover { background: rgba(234,84,85,0.06); border-color: rgba(234,84,85,0.10); }
               `}</style>
               <div>{selectedIds.size} selected</div>
               <div className="d-flex gap-2">
                 <Button size="sm" className="btn-csv" onClick={() => handleExportSelected([...selectedIds])}>Export CSV</Button>
                 <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF([...selectedIds])}>Export PDF</Button>
-                <Button size="sm" className="btn-delete" onClick={() => { setModalAction({ type: 'bulk-delete', data: [...selectedIds] }); setShowDeleteModal(true); }}>Delete Selected</Button>
                 <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
               </div>
             </div>
@@ -2487,151 +2593,98 @@ const handleFormSubmit = async (formData) => {
                   />
                 </th>
                 <th style={{ backgroundColor: '#f6fcf6' }}>Teacher ID</th>
-              <th style={{ backgroundColor: '#f6fcf6' }}>Teacher Name</th>
-              <th style={{ backgroundColor: '#f6fcf6' }}>Email</th>
-              <th style={{ backgroundColor: '#f6fcf6' }}>Contact</th>
-              <th style={{ backgroundColor: '#f6fcf6' }}>Assigned Section</th>
-              <th style={{ backgroundColor: '#f6fcf6' }}>Students Count</th>
-              <th style={{ backgroundColor: '#f6fcf6', borderTopRightRadius: '16px', textAlign: 'center' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((teacher, idx) => (
-              <tr key={teacher.id} style={{ background: '#f6fcf6', borderRadius: '12px', transition: 'box-shadow 0.2s', boxShadow: '0 2px 8px rgba(151,247,151,0.08)' }}>
-                <td style={{ width: 48 }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(teacher.id)}
-                    onChange={(e) => {
-                      const newSet = new Set(selectedIds);
-                      if (e.target.checked) newSet.add(teacher.id);
-                      else newSet.delete(teacher.id);
-                      setSelectedIds(newSet);
-                    }}
-                    aria-label={`Select ${teacher.first_name} ${teacher.last_name}`}
-                  />
-                </td>
-                <td>{idx + 1}</td>
-                <td>{teacher.first_name} {teacher.middle_name ? teacher.middle_name + ' ' : ''}{teacher.last_name}</td>
-                <td>{teacher.email}</td>
-                <td>{teacher.contact}</td>
-                <td>
-                  {teacher.assigned_section ? (
-                    <Badge bg="primary" style={{ borderRadius: '12px', padding: '6px 12px' }}>
-                      {teacher.assigned_section}
-                    </Badge>
-                  ) : (
-                    <Badge bg="secondary" style={{ borderRadius: '12px', padding: '6px 12px' }}>
-                      Not Assigned
-                    </Badge>
-                  )}
-                </td>
-                <td style={{ textAlign: 'center' }}>
-                  <Badge 
-                    bg={teacher.student_count > 0 ? 'success' : 'light'} 
-                    style={{ 
-                      borderRadius: '12px', 
-                      padding: '6px 12px',
-                      color: teacher.student_count > 0 ? 'white' : '#666',
-                      fontSize: '0.875rem',
-                      minWidth: '40px'
-                    }}
-                  >
-                    {teacher.student_count}
-                  </Badge>
-                </td>
-                <td style={{ textAlign: 'center' }}>
-                  <Button variant="outline-info" size="sm" className="edit-btn" style={{ borderRadius: '20px', background: 'transparent', marginRight: '6px' }} onClick={() => handleShowModal('edit', teacher)}><FiEdit2 /></Button>
-                  <Button variant="outline-danger" size="sm" className="delete-btn" style={{ borderRadius: '20px', background: 'transparent' }} onClick={() => handleShowModal('delete', teacher)}><FiTrash2 /></Button>
-                </td>
+                <th style={{ backgroundColor: '#f6fcf6' }}>Teacher Name</th>
+                <th style={{ backgroundColor: '#f6fcf6' }}>Email</th>
+                <th style={{ backgroundColor: '#f6fcf6' }}>Contact</th>
+                <th style={{ backgroundColor: '#f6fcf6' }}>Assigned Section</th>
+                <th style={{ backgroundColor: '#f6fcf6' }}>Students Count</th>
+                <th style={{ backgroundColor: '#f6fcf6', borderTopRightRadius: '16px', textAlign: 'center' }}>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </Table>
+            </thead>
+            <tbody>
+              {users.map((teacher, idx) => (
+                <tr key={teacher.id} style={{ background: '#f6fcf6', borderRadius: '12px', transition: 'box-shadow 0.2s', boxShadow: '0 2px 8px rgba(151,247,151,0.08)' }}>
+                  <td style={{ width: 48 }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(teacher.id)}
+                      onChange={(e) => {
+                        const newSet = new Set(selectedIds);
+                        if (e.target.checked) newSet.add(teacher.id);
+                        else newSet.delete(teacher.id);
+                        setSelectedIds(newSet);
+                      }}
+                      aria-label={`Select ${teacher.first_name} ${teacher.last_name}`}
+                    />
+                  </td>
+                  <td>{idx + 1}</td>
+                  <td>{teacher.first_name} {teacher.middle_name ? teacher.middle_name + ' ' : ''}{teacher.last_name}</td>
+                  <td>{teacher.email}</td>
+                  <td>{teacher.contact}</td>
+                  <td>
+                    {teacher.assigned_section ? (
+                      <Badge bg="primary" style={{ borderRadius: '12px', padding: '6px 12px' }}>
+                        {teacher.assigned_section}
+                      </Badge>
+                    ) : (
+                      <Badge bg="secondary" style={{ borderRadius: '12px', padding: '6px 12px' }}>
+                        Not Assigned
+                      </Badge>
+                    )}
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <Badge 
+                      bg={teacher.student_count > 0 ? 'success' : 'light'} 
+                      style={{ 
+                        borderRadius: '12px', 
+                        padding: '6px 12px',
+                        color: teacher.student_count > 0 ? 'white' : '#666',
+                        fontSize: '0.875rem',
+                        minWidth: '40px'
+                      }}
+                    >
+                      {teacher.student_count}
+                    </Badge>
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    <Button variant="outline-info" size="sm" className="edit-btn" style={{ borderRadius: '20px', background: 'transparent', marginRight: '6px' }} onClick={() => handleShowModal('edit', teacher)}><FiEdit2 /></Button>
+                    <Button variant="outline-danger" size="sm" className="delete-btn" style={{ borderRadius: '20px', background: 'transparent' }} onClick={() => handleShowModal('delete', teacher)}><FiTrash2 /></Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
         </>
       )}
 
       {/* Admins Section */}
       {activeTab === 'admins' && (
         <>
-          {/* Bulk toolbar */}
-          {selectedIds.size > 0 && (
-            <div className="bulk-toolbar d-flex justify-content-between align-items-center mb-2" style={{ marginBottom: '0.25rem', transform: 'translateY(6px)' }}>
-              <style>{`
-                .bulk-toolbar .btn-csv { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-csv:hover { background: rgba(40,199,111,0.08); border-color: rgba(40,199,111,0.12); }
-                .bulk-toolbar .btn-pdf { color: ${colors.primary}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
-                .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
-                .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
-                .bulk-toolbar .btn-delete:hover { background: rgba(234,84,85,0.06); border-color: rgba(234,84,85,0.10); }
-              `}</style>
-              <div>{selectedIds.size} selected</div>
-              <div className="d-flex gap-2">
-                <Button size="sm" className="btn-csv" onClick={() => handleExportSelected([...selectedIds])}>Export CSV</Button>
-                <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF([...selectedIds])}>Export PDF</Button>
-                <Button size="sm" className="btn-delete" onClick={() => { setModalAction({ type: 'bulk-delete', data: [...selectedIds] }); setShowDeleteModal(true); }}>Delete Selected</Button>
-                <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
-              </div>
-            </div>
-          )}
           <Table bordered hover responsive className="mt-3 pretty-table" style={{ borderRadius: '16px', boxShadow: '0 4px 16px rgba(67,162,206,0.08)' }}>
             <thead style={{ background: 'linear-gradient(90deg, #f5f7fd 80%, #eceffd 100%)', borderRadius: '16px' }}>
               <tr>
-                <th style={{ backgroundColor: '#f5f7fd', borderTopLeftRadius: '16px', width: 48 }}>
-                  <input
-                    type="checkbox"
-                    checked={users.length > 0 && users.every(u => selectedIds.has(u.id))}
-                    onChange={(e) => {
-                      const newSet = new Set(selectedIds);
-                      if (e.target.checked) {
-                        users.forEach(u => newSet.add(u.id));
-                        setSelectAllOnPage(true);
-                      } else {
-                        users.forEach(u => newSet.delete(u.id));
-                        setSelectAllOnPage(false);
-                      }
-                      setSelectedIds(newSet);
-                    }}
-                    aria-label="Select all on page"
-                  />
-                </th>
-                <th style={{ backgroundColor: '#f5f7fd' }}>Admin ID</th>
-              <th style={{ backgroundColor: '#f5f7fd' }}>Admin Name</th>
-              <th style={{ backgroundColor: '#f5f7fd' }}>Email</th>
-              <th style={{ backgroundColor: '#f5f7fd' }}>Contact</th>
-              <th style={{ backgroundColor: '#f5f7fd', borderTopRightRadius: '16px', textAlign: 'center' }}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((admin, idx) => (
-              <tr key={admin.id} style={{ background: '#f5f7fd', borderRadius: '12px', transition: 'box-shadow 0.2s', boxShadow: '0 2px 8px rgba(67,162,206,0.08)' }}>
-                <td style={{ width: 48 }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedIds.has(admin.id)}
-                    onChange={(e) => {
-                      const newSet = new Set(selectedIds);
-                      if (e.target.checked) newSet.add(admin.id);
-                      else newSet.delete(admin.id);
-                      setSelectedIds(newSet);
-                    }}
-                    aria-label={`Select ${admin.first_name} ${admin.last_name}`}
-                  />
-                </td>
-                <td>{idx + 1}</td>
-                <td>{admin.first_name} {admin.middle_name ? admin.middle_name + ' ' : ''}{admin.last_name}</td>
-                <td>{admin.email}</td>
-                <td>{admin.contact}</td>
-                <td style={{ textAlign: 'center' }}>
-                  <Button variant="outline-info" size="sm" className="edit-btn" style={{ borderRadius: '20px', background: 'transparent', marginRight: '6px' }} onClick={() => handleShowModal('edit', admin)}><FiEdit2 /></Button>
-                  <Button variant="outline-danger" size="sm" className="delete-btn" style={{ borderRadius: '20px', background: 'transparent' }} onClick={() => handleShowModal('delete', admin)}><FiTrash2 /></Button>
-                </td>
+                <th style={{ backgroundColor: '#f5f7fd', borderTopLeftRadius: '16px' }}>Admin ID</th>
+                <th style={{ backgroundColor: '#f5f7fd' }}>Admin Name</th>
+                <th style={{ backgroundColor: '#f5f7fd' }}>Email</th>
+                <th style={{ backgroundColor: '#f5f7fd' }}>Contact</th>
+                <th style={{ backgroundColor: '#f5f7fd', borderTopRightRadius: '16px', textAlign: 'center' }}>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </Table>
+            </thead>
+            <tbody>
+              {users.map((admin, idx) => (
+                <tr key={admin.id} style={{ background: '#f5f7fd', borderRadius: '12px', transition: 'box-shadow 0.2s', boxShadow: '0 2px 8px rgba(67,162,206,0.08)' }}>
+                  <td>{idx + 1}</td>
+                  <td>{admin.first_name} {admin.middle_name ? admin.middle_name + ' ' : ''}{admin.last_name}</td>
+                  <td>{admin.email}</td>
+                  <td>{admin.contact}</td>
+                  <td style={{ textAlign: 'center' }}>
+                    <Button variant="outline-info" size="sm" className="edit-btn" style={{ borderRadius: '20px', background: 'transparent', marginRight: '6px' }} onClick={() => handleShowModal('edit', admin)}><FiEdit2 /></Button>
+                    <Button variant="outline-danger" size="sm" className="delete-btn" style={{ borderRadius: '20px', background: 'transparent' }} onClick={() => handleShowModal('delete', admin)}><FiTrash2 /></Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </Table>
         </>
       )}
     </div>
@@ -2935,6 +2988,7 @@ const handleFormSubmit = async (formData) => {
                         <option value="enrollment-oldest">Oldest Enrolled</option>
                         <option value="age-youngest">Youngest</option>
                         <option value="age-oldest">Oldest</option>
+                        <option value="no-section">(No Section)</option>
                       </Form.Select>
                     </div>
                   </>
@@ -3075,6 +3129,7 @@ const handleFormSubmit = async (formData) => {
             onSubmit={handleFormSubmit}
             onCancel={handleCloseModal}
             isMobile={isMobile}
+            calculatePasswordStrength={calculatePasswordStrength}
           />
         </Modal.Body>
       </Modal>
@@ -4182,7 +4237,7 @@ const AddChildForm = ({ data, onSubmit, onCancel, isMobile }) => {
   );
 };
 
-const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => {
+const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction, calculatePasswordStrength }) => {
   // First create base form structure
   const baseFormData = {
     firstname: '',
@@ -4269,9 +4324,12 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
   const [formData, setFormData] = useState(initialFormData);
   const [errors, setErrors] = useState({});
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordStrength, setPasswordStrength] = useState({ score: 0, label: '', color: '' });
   React.useEffect(() => {
     setFormData(initialFormData);
     setErrors({});
+    // Reset password strength when modal opens
+    setPasswordStrength({ score: 0, label: '', color: '' });
   }, [data, type]);
 
   const isCreating = !data || !data.id;
@@ -4317,8 +4375,11 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
     // - password length if provided
     // - phone format if provided
     if (!isCreating) {
-      if (formData.password && formData.password.trim() && formData.password.length < 8) {
-        newErrors.password = 'Password must be at least 8 characters';
+      if (formData.password && formData.password.trim()) {
+        const strength = calculatePasswordStrength(formData.password);
+        if (strength.score < 80) {
+          newErrors.password = 'Password does not meet security requirements';
+        }
       }
       if (formData.contactnumber) {
         const phoneRegex = /^0\d{10}$/;
@@ -4413,7 +4474,10 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
     }
 
     if (formData.password) {
-      if (formData.password.length < 8) newErrors.password = 'Password must be at least 8 characters';
+      const strength = calculatePasswordStrength(formData.password);
+      if (strength.score < 80) {
+        newErrors.password = 'Password does not meet security requirements';
+      }
     }
 
     setErrors(newErrors);
@@ -4479,6 +4543,12 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
         ...formData,
         [name]: value
       });
+      
+      // Calculate password strength when password field changes
+      if (name === 'password') {
+        const strength = calculatePasswordStrength(value);
+        setPasswordStrength(strength);
+      }
     }
   };
 
@@ -4851,7 +4921,7 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
           <div className="form-section">
             <div className="section-header">
               <div className="section-icon">
-                <FiAlertCircle size={20} />
+                {/* Removed FiAlertCircle icon */}
               </div>
               <h6>Security</h6>
             </div>
@@ -4860,7 +4930,7 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
                 <Col xs={12} md={6}>
                   <Form.Group className="form-group">
                     <Form.Label>
-                      {isCreating ? 'Set a password for the account' : 'Change Password (leave empty to keep current)'}
+                      {isCreating ? 'Set a strong password for the account' : 'Change Password (leave empty to keep current)'}
                       {isCreating && <span className="required">*</span>}
                     </Form.Label>
                     <div style={{ position: 'relative' }}>
@@ -4870,7 +4940,7 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
                         value={formData.password || ''}
                         onChange={handleInputChange}
                         isInvalid={!!errors.password}
-                        placeholder={isCreating ? "Enter password" : "Enter new password (optional)"}
+                        placeholder={isCreating ? "Enter a strong, unique password" : "Enter new password (optional)"}
                         className="form-control-modern"
                       />
                       <span
@@ -4888,11 +4958,46 @@ const UserForm = ({ type, data, onSubmit, onCancel, isMobile, modalAction }) => 
                         {showPassword ? <FiEye size={16} /> : <FiEyeOff size={16} />}
                       </span>
                     </div>
+                    
+                    {/* Password Strength Indicator */}
+                    {formData.password && (
+                      <div style={{ marginTop: '8px', marginBottom: '8px' }}>
+                        <div style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center',
+                          marginBottom: '4px'
+                        }}>
+                          <small style={{ fontWeight: '600', color: passwordStrength.color }}>
+                            Password Strength: {passwordStrength.label}
+                          </small>
+                          <small style={{ color: '#6c757d' }}>
+                            {Math.round(passwordStrength.score)}%
+                          </small>
+                        </div>
+                        <div style={{
+                          width: '100%',
+                          height: '6px',
+                          backgroundColor: '#e9ecef',
+                          borderRadius: '3px',
+                          overflow: 'hidden'
+                        }}>
+                          <div style={{
+                            width: `${passwordStrength.score}%`,
+                            height: '100%',
+                            backgroundColor: passwordStrength.color,
+                            borderRadius: '3px',
+                            transition: 'all 0.3s ease'
+                          }} />
+                        </div>
+                      </div>
+                    )}
+                    
                     <Form.Control.Feedback type="invalid">
                       {errors.password}
                     </Form.Control.Feedback>
                     <Form.Text className="text-muted small-hint">
-                      Password must be at least 8 characters
+                      Create a strong password with at least 8 characters, including uppercase, lowercase, numbers, and special characters.
                     </Form.Text>
                   </Form.Group>
                 </Col>
