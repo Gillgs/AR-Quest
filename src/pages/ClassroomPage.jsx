@@ -173,6 +173,9 @@ const ClassroomPage = () => {
   const [selectedSectionData, setSelectedSectionData] = useState(null);
   const [sectionStudents, setSectionStudents] = useState([]);
   const [isCloseHover, setIsCloseHover] = useState(false);
+  // Capacity modal state for friendly UI errors (e.g., bulk move capacity exceeded)
+  const [showCapacityModal, setShowCapacityModal] = useState(false);
+  const [capacityModalInfo, setCapacityModalInfo] = useState({ title: '', message: '', availableSlots: 0 });
   const pdfContentRef = useRef(null);
   const userRole = localStorage.getItem("userRole");
   const userId = localStorage.getItem("userId");
@@ -542,6 +545,36 @@ const ClassroomPage = () => {
     return () => clearTimeout(id);
   }, [showClassToast]);
 
+  // Capacity validation utility (moved here to be accessible in handleSectionAction)
+  const checkSectionCapacityInAction = (sectionId, additionalStudents = 0) => {
+    if (sectionId === 'unassign' || !sectionId) return { isValid: true };
+    
+    const section = sections.find(s => s.id === sectionId);
+    if (!section) return { isValid: false, error: 'Section not found' };
+    
+    const maxCapacity = section.max_students || 25;
+    const currentCount = students.filter(s => s.section_id === sectionId).length;
+    const newTotal = currentCount + additionalStudents;
+    
+    return {
+      isValid: newTotal <= maxCapacity,
+      currentCount,
+      maxCapacity,
+      newTotal,
+      availableSlots: maxCapacity - currentCount,
+      error: newTotal > maxCapacity ? 
+        `Cannot complete operation: Section "${section.name}" has reached its capacity.\n` +
+        `Current enrollment: ${currentCount}/${maxCapacity} students\n` +
+        `Attempting to add: ${additionalStudents} student${additionalStudents > 1 ? 's' : ''}\n` +
+        `Available slots: ${Math.max(0, maxCapacity - currentCount)}\n\n` +
+        `Please either:\n` +
+        `• Select a different section with available slots\n` +
+        `• Reduce the number of students to move\n` +
+        `• Increase the section capacity if needed` 
+        : null
+    };
+  };
+
   const handleSectionAction = async (action, data) => {
     try {
       let error;
@@ -613,6 +646,18 @@ const ClassroomPage = () => {
             }
             
           } else if (data.type === 'student') {
+            // Check capacity before assigning student to section
+            if (data.section_id) {
+              const student = students.find(s => s.id === data.student_id);
+              // Only count as +1 if student is not already in this section
+              const additionalStudents = student?.section_id === data.section_id ? 0 : 1;
+              
+              const capacityCheck = checkSectionCapacityInAction(data.section_id, additionalStudents);
+              if (!capacityCheck.isValid) {
+                throw new Error(capacityCheck.error);
+              }
+            }
+            
             // Assign student to section by updating section_id in students table
             const { error: studentAssignError } = await supabaseAdmin
               .from('students')
@@ -864,6 +909,27 @@ const ClassroomPage = () => {
 
   const handleBulkSectionChange = async (newSectionId) => {
     if (selectedStudents.size === 0) return;
+    
+    // Check capacity before opening modal (only if not unassigning)
+    if (newSectionId !== 'unassign') {
+      const studentsToMove = Array.from(selectedStudents);
+      // Filter out students already in the target section
+      const studentsNotInTargetSection = studentsToMove.filter(studentId => {
+        const student = students.find(s => s.id === studentId);
+        return student?.section_id !== newSectionId;
+      });
+      
+      const capacityCheck = checkSectionCapacityInAction(newSectionId, studentsNotInTargetSection.length);
+      if (!capacityCheck.isValid) {
+        // Show friendly modal with detailed capacity information
+        const errorTitle = `Bulk Move Failed - Section Capacity Exceeded`;
+        const errorMessage = capacityCheck.error;
+        setCapacityModalInfo({ title: errorTitle, message: errorMessage, availableSlots: capacityCheck.availableSlots || 0 });
+        setShowCapacityModal(true);
+        return;
+      }
+    }
+    
     const sectionName = newSectionId === 'unassign' ? 'Unassigned' : sections.find(s => s.id === newSectionId)?.name || 'Unknown Section';
     // Open confirmation modal
     setBulkMoveTargetSection(newSectionId);
@@ -1520,9 +1586,31 @@ const ClassroomPage = () => {
                         <Dropdown.Menu>
                           <Dropdown.Item as="button" onClick={() => handleBulkSectionChange('unassign')}>📋 Unassigned</Dropdown.Item>
                           <Dropdown.Divider />
-                          {sections.map(section => (
-                            <Dropdown.Item as="button" key={section.id} onClick={() => handleBulkSectionChange(section.id)}>🏫 {section.name}</Dropdown.Item>
-                          ))}
+                          {sections.map(section => {
+                            const currentCount = students.filter(s => s.section_id === section.id).length;
+                            const maxCapacity = section.max_students || 25;
+                            const availableSlots = maxCapacity - currentCount;
+                            const selectedCount = selectedStudents.size;
+                            const wouldExceed = availableSlots < selectedCount;
+                            
+                            return (
+                              <Dropdown.Item 
+                                as="button" 
+                                key={section.id} 
+                                onClick={() => handleBulkSectionChange(section.id)}
+                                disabled={wouldExceed && availableSlots === 0}
+                                className={wouldExceed ? 'text-warning' : ''}
+                                title={wouldExceed ? 
+                                  `Section has only ${availableSlots} available slots, but ${selectedCount} students are selected` : 
+                                  `${currentCount}/${maxCapacity} students enrolled - ${availableSlots} slots available`
+                                }
+                              >
+                                🏫 {section.name} ({currentCount}/{maxCapacity})
+                                {wouldExceed && availableSlots > 0 && <span className="text-warning ms-1">⚠️</span>}
+                                {availableSlots === 0 && <span className="text-danger ms-1">(FULL)</span>}
+                              </Dropdown.Item>
+                            );
+                          })}
                         </Dropdown.Menu>
                       </Dropdown>
                       
@@ -2443,6 +2531,56 @@ const ClassroomPage = () => {
       />
     </div>
 
+    {/* Capacity Error Modal (matches Classroom modal styling) */}
+    <Modal
+      show={showCapacityModal}
+      onHide={() => setShowCapacityModal(false)}
+      centered
+    >
+      <Modal.Header style={{ 
+        background: 'linear-gradient(135deg, #4285F4 0%, #34A853 100%)',
+        color: 'white',
+        borderRadius: '12px 12px 0 0',
+        border: 'none'
+      }}>
+        <Modal.Title style={{ fontWeight: 700 }}>
+          { (capacityModalInfo.title || 'Section Capacity Exceeded').replace(/^Bulk Move Failed -\s*/,'') }
+        </Modal.Title>
+      </Modal.Header>
+      <Modal.Body style={{ 
+        background: 'linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%)',
+        padding: '18px',
+        color: '#374151'
+      }}>
+        <div style={{ fontSize: '0.95rem', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{capacityModalInfo.message}</div>
+      </Modal.Body>
+      <Modal.Footer style={{
+        background: '#f8f9fa',
+        borderTop: '1px solid #dee2e6',
+        borderRadius: '0 0 12px 12px',
+        display: 'flex',
+        justifyContent: 'center'
+      }}>
+        <div style={{ width: '100%', display: 'flex', justifyContent: 'center', gap: 12 }}>
+          <Button
+            className="section-modal-close-btn"
+            onClick={() => setShowCapacityModal(false)}
+            style={{
+              ...kidStyles.button,
+              background: '#ffffff',
+              borderColor: '#4285F4',
+              color: '#4285F4',
+              padding: '8px 20px',
+              borderRadius: '28px',
+              fontWeight: 700
+            }}
+          >
+            OK
+          </Button>
+        </div>
+      </Modal.Footer>
+    </Modal>
+
     {/* Section Students Modal */}
     <Modal 
       show={showSectionStudentsModal} 
@@ -2766,11 +2904,23 @@ const SectionModal = ({ show, mode, section, sections, onHide, onExited, onSubmi
                 }}
               >
                 <option value="">Select a section...</option>
-                {sections.map((section) => (
-                  <option key={section.id} value={section.id} title={`${section.classroom_number} ${section.name} ${section.time_period.charAt(0).toUpperCase() + section.time_period.slice(1)}`}>
-                    {`${section.classroom_number} ${section.name} ${section.time_period.charAt(0).toUpperCase() + section.time_period.slice(1)}`}
-                  </option>
-                ))}
+                {sections.map((section) => {
+                  const currentCount = students.filter(s => s.section_id === section.id).length;
+                  const maxCapacity = section.max_students || 25;
+                  const isFull = currentCount >= maxCapacity;
+                  const capacityInfo = `(${currentCount}/${maxCapacity})`;
+                  
+                  return (
+                    <option 
+                      key={section.id} 
+                      value={section.id} 
+                      disabled={isFull}
+                      title={`${section.classroom_number} ${section.name} ${section.time_period.charAt(0).toUpperCase() + section.time_period.slice(1)} - ${currentCount}/${maxCapacity} students${isFull ? ' (FULL)' : ''}`}
+                    >
+                      {`${section.classroom_number} ${section.name} ${section.time_period.charAt(0).toUpperCase() + section.time_period.slice(1)} ${capacityInfo}${isFull ? ' (FULL)' : ''}`}
+                    </option>
+                  );
+                })}
               </Form.Select>
             </Form.Group>
           </Form>
