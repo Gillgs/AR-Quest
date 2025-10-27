@@ -551,9 +551,12 @@ const ClassroomPage = () => {
         throw new Error('No active session');
       }
 
+      // Choose client: prefer admin client for teacher/admin roles when available
+      const client = (userRole === 'teacher' || userRole === 'admin') && supabaseAdmin ? supabaseAdmin : supabase;
+
       switch (action) {
         case "create":
-          const { error: createError } = await supabaseAdmin
+          const { error: createError } = await client
             .from('sections')
             .insert([{
               name: data.section_name,
@@ -566,23 +569,24 @@ const ClassroomPage = () => {
           if (createError) throw createError;
           break;
         case "update":
-          const { error: updateError } = await supabaseAdmin
-            .from('sections')
-            .update({ 
-              name: data.new_section_name,
-              classroom_number: data.classroom_number,
-              time_period: data.time_period,
-              max_students: data.max_students,
-              school_year: data.school_year
-            })
-            .eq('name', data.old_section_name);
+        case "edit":
+            const { error: updateError } = await client
+              .from('sections')
+              .update({ 
+                name: data.new_section_name,
+                classroom_number: data.classroom_number,
+                time_period: data.time_period,
+                max_students: data.max_students,
+                school_year: data.school_year
+              })
+              .eq('id', data.old_section_id || data.old_section_name);
           if (updateError) throw updateError;
           break;
         case "delete":
-          const { error: deleteError } = await supabaseAdmin
+          const { error: deleteError } = await client
             .from('sections')
             .delete()
-            .eq('name', data.section_name);
+            .eq('id', data.section_id || data.section_name);
           if (deleteError) throw deleteError;
           break;
         case "assign":
@@ -636,6 +640,7 @@ const ClassroomPage = () => {
           successMessage = "Section created successfully";
           break;
         case "update":
+        case "edit":
           successMessage = "Section updated successfully";
           break;
         case "delete":
@@ -1363,27 +1368,45 @@ const ClassroomPage = () => {
                     <div className={`d-flex gap-4 ${isMobile ? 'flex-column gap-3 w-100' : ''}`}>                      {/* Section Filter - Only visible for admin/teacher */}
                       {activeTab === "students" && (userRole === "admin" || userRole === "teacher") && (
                         <div title={userRole === "teacher" ? "This is your assigned section - it cannot be changed" : "Select a section to filter students"}>
-                          <Form.Select 
-                            value={selectedSection} 
-                            onChange={(e) => setSelectedSection(e.target.value)}
-                            className={isMobile ? 'classroom-mobile-section-filter' : ''}
-                            style={{ 
-                              width: isMobile ? '100%' : '200px', 
-                              borderRadius: '50px',
-                              border: userRole === "teacher" ? '2px solid #28a745' : '2px solid #E0E0E0',
-                              boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
-                              padding: '8px 16px',
-                              fontSize: '0.9rem',
-                              backgroundColor: userRole === "teacher" ? '#f8f9fa' : 'white',
-                              color: userRole === "teacher" ? '#28a745' : 'inherit',
-                              fontWeight: userRole === "teacher" ? '600' : 'normal',
-                              cursor: userRole === "teacher" ? 'not-allowed' : 'pointer'
-                            }}
-                            size="sm"
-                            disabled={userRole === "teacher"} // Disable for teachers
-                          >
-                          {userRole === "admin" ? (
-                            <>
+                          {userRole === "teacher" ? (
+                            <div
+                              style={{
+                                display: 'inline-block',
+                                width: isMobile ? '100%' : 'auto',
+                                minWidth: isMobile ? 'auto' : '160px',
+                                borderRadius: '50px',
+                                border: '2px solid #28a745',
+                                boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
+                                padding: '8px 16px',
+                                fontSize: '0.95rem',
+                                backgroundColor: '#f8f9fa',
+                                color: '#28a745',
+                                fontWeight: 600,
+                                whiteSpace: 'normal',
+                                wordBreak: 'break-word'
+                              }}
+                            >
+                              {selectedSection === 'all' ? (selectedSectionData?.name || 'All Sections') : selectedSection}
+                            </div>
+                          ) : (
+                            <Form.Select 
+                              value={selectedSection} 
+                              onChange={(e) => setSelectedSection(e.target.value)}
+                              className={isMobile ? 'classroom-mobile-section-filter' : ''}
+                              style={{ 
+                                width: isMobile ? '100%' : '200px', 
+                                borderRadius: '50px',
+                                border: '2px solid #E0E0E0',
+                                boxShadow: '0 2px 5px rgba(0,0,0,0.05)',
+                                padding: '8px 16px',
+                                fontSize: '0.9rem',
+                                backgroundColor: 'white',
+                                color: 'inherit',
+                                fontWeight: 'normal',
+                                cursor: 'pointer'
+                              }}
+                              size="sm"
+                            >
                               <option value="all">All Sections</option>
                               <option value="unassigned">Unassigned</option>
                               {filteredSections.map(section => (
@@ -1391,15 +1414,8 @@ const ClassroomPage = () => {
                                   {section.name}
                                 </option>
                               ))}
-                            </>
-                          ) : (
-                            // For teachers, only show their assigned section
-                            <option value={teachers.find(t => t.uid === userId || t.id === userId)?.section_name || teachers.find(t => t.uid === userId || t.id === userId)?.assignedSectionName || ''}>
-                              {teachers.find(t => t.uid === userId || t.id === userId)?.section_name || teachers.find(t => t.uid === userId || t.id === userId)?.assignedSectionName || 'No Section Assigned'} 
-                              {teachers.find(t => t.uid === userId || t.id === userId)?.section_name || teachers.find(t => t.uid === userId || t.id === userId)?.assignedSectionName ? ' (Your Assigned Section)' : ''}
-                            </option>
+                            </Form.Select>
                           )}
-                          </Form.Select>
                         </div>
                       )}{/* Search */}
                       <div className={`d-flex gap-2 ${isMobile ? 'classroom-mobile-search' : ''}`}>
@@ -1815,7 +1831,7 @@ const ClassroomPage = () => {
                                     padding: '10px 16px',
                                     fontSize: '1rem'
                                   }}
-                                  onClick={() => handleShowModal("edit", section)}>
+                                  onClick={(e) => { e.stopPropagation(); handleShowModal("edit", section); }}>
                                   <FiEdit2 size={18} />
                                 </Button>
                                 <Button
@@ -1824,7 +1840,7 @@ const ClassroomPage = () => {
                                     padding: '10px 16px',
                                     fontSize: '1rem'
                                   }}
-                                  onClick={() => handleShowModal("delete", section)}>
+                                  onClick={(e) => { e.stopPropagation(); handleShowModal("delete", section); }}>
                                   <FiTrash2 size={18} />
                                 </Button>
                               </td>
@@ -2583,8 +2599,10 @@ const ClassroomPage = () => {
 const SectionModal = ({ show, mode, section, sections, onHide, onExited, onSubmit }) => {
   const [formData, setFormData] = useState({
     section_name: "",
+    section_id: "",
     new_section_name: "",
     old_section_name: "",
+    old_section_id: "",
     new_section_id: "",
     time_period: "morning",
     classroom_number: "",
@@ -2597,8 +2615,10 @@ const SectionModal = ({ show, mode, section, sections, onHide, onExited, onSubmi
     if (show && section) {
       setFormData({
         section_name: section.name || section.section_name || "",
+        section_id: section.id || "",
         new_section_name: section.name || section.section_name || "",
         old_section_name: section.name || section.section_name || "",
+        old_section_id: section.id || "",
         new_section_id: "",
         time_period: section.time_period || "morning",
         classroom_number: section.classroom_number || "",
@@ -2608,8 +2628,10 @@ const SectionModal = ({ show, mode, section, sections, onHide, onExited, onSubmi
     } else if (show && !section) {
       setFormData({
         section_name: "",
+        section_id: "",
         new_section_name: "",
         old_section_name: "",
+        old_section_id: "",
         new_section_id: "",
         time_period: "morning",
         classroom_number: "",
@@ -2657,6 +2679,7 @@ const SectionModal = ({ show, mode, section, sections, onHide, onExited, onSubmi
       case "edit":
         actionData = {
           old_section_name: formData.old_section_name,
+          old_section_id: formData.old_section_id || formData.section_id,
           new_section_name: formData.new_section_name,
           time_period: formData.time_period,
           classroom_number: formData.classroom_number,
@@ -2665,7 +2688,7 @@ const SectionModal = ({ show, mode, section, sections, onHide, onExited, onSubmi
         };
         break;
       case "delete":
-        actionData = { section_name: formData.old_section_name };
+        actionData = { section_name: formData.old_section_name, section_id: formData.old_section_id || formData.section_id };
         break;
       case "assign":
         actionData = {
