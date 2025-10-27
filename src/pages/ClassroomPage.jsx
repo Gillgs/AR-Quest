@@ -1034,7 +1034,7 @@ const ClassroomPage = () => {
         tableClone.style.width = '100%';
         const thead = document.createElement('thead');
         const htr = document.createElement('tr');
-        ['ID', 'Student Name', 'Section'].forEach(h => {
+        ['ID', 'Student Name', 'Parent Name', 'Birth Date', 'Enrollment Date', 'Section'].forEach(h => {
           const th = document.createElement('th');
           th.textContent = h;
           th.style.padding = '8px';
@@ -1048,6 +1048,14 @@ const ClassroomPage = () => {
           const tr = document.createElement('tr');
           const tdId = document.createElement('td'); tdId.textContent = student.student_id || 'N/A'; tdId.style.padding = '8px'; tr.appendChild(tdId);
           const tdName = document.createElement('td'); tdName.textContent = (student.first_name || '') + (student.last_name ? ' ' + student.last_name : ''); tdName.style.padding = '8px'; tr.appendChild(tdName);
+          const tdParent = document.createElement('td');
+          const parentFull = (student.user_profiles && (student.user_profiles.first_name || student.user_profiles.last_name))
+            ? `${student.user_profiles.first_name || ''} ${student.user_profiles.last_name || ''}`.trim()
+            : (student.parent_name || 'N/A');
+          tdParent.textContent = parentFull;
+          tdParent.style.padding = '8px'; tr.appendChild(tdParent);
+          const tdBirth = document.createElement('td'); tdBirth.textContent = student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : 'N/A'; tdBirth.style.padding = '8px'; tr.appendChild(tdBirth);
+          const tdEnroll = document.createElement('td'); tdEnroll.textContent = student.enrollment_date ? new Date(student.enrollment_date).toLocaleDateString() : 'N/A'; tdEnroll.style.padding = '8px'; tr.appendChild(tdEnroll);
           const tdSection = document.createElement('td'); tdSection.textContent = student.section?.name || student.section_name || 'Unassigned'; tdSection.style.padding = '8px'; tr.appendChild(tdSection);
           tbody.appendChild(tr);
         });
@@ -1098,33 +1106,110 @@ const ClassroomPage = () => {
       
       pdfContent.appendChild(footer);
       
-      document.body.appendChild(pdfContent);
-      
-      const canvas = await html2canvas(pdfContent, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        allowTaint: true
-      });
-      
-      const imgData = canvas.toDataURL('image/png');
-      
-      const pdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'mm',
-        format: 'a4'
-      });
-      
-      const imgWidth = 210;
-      const pageHeight = 297;
-      const imgHeight = canvas.height * imgWidth / canvas.width;
-      
-      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
-      
+  // Instead of rendering the entire long content as one canvas (which can split rows),
+  // render one page per N rows (15 students per page) by building a temporary page DOM,
+  // rendering it with html2canvas, adding each image to jsPDF, and then removing it.
+  const rowsPerPage = 15;
+      const students = printFilteredStudents || [];
+      const totalPages = Math.ceil(students.length / rowsPerPage) || 1;
+
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const imgWidth = 210; // mm (A4 width)
+
+      // Helper to build a page DOM for a slice of students
+      const buildPageDiv = (pageIndex) => {
+        const start = pageIndex * rowsPerPage;
+        const pageStudents = students.slice(start, start + rowsPerPage);
+
+        const pageDiv = document.createElement('div');
+        pageDiv.style.padding = '20px';
+        pageDiv.style.fontFamily = 'Arial, sans-serif';
+        pageDiv.style.width = '100%';
+        pageDiv.style.maxWidth = '800px';
+        pageDiv.style.background = 'white';
+
+        // Recreate header
+        const headerClone = header.cloneNode(true);
+        pageDiv.appendChild(headerClone);
+
+        // Build table for this page
+        const table = document.createElement('table');
+        table.style.width = '100%';
+        table.style.borderCollapse = 'collapse';
+        table.style.marginBottom = '20px';
+
+        const thead = document.createElement('thead');
+        const htr = document.createElement('tr');
+        ['ID', 'Student Name', 'Parent Name', 'Birth Date', 'Enrollment Date', 'Section'].forEach(h => {
+          const th = document.createElement('th');
+          th.textContent = h;
+          th.style.padding = '8px';
+          th.style.textAlign = 'left';
+          th.style.backgroundColor = '#f2f2f2';
+          th.style.border = '1px solid #ddd';
+          th.style.fontWeight = 'bold';
+          htr.appendChild(th);
+        });
+        thead.appendChild(htr);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        pageStudents.forEach(student => {
+          const tr = document.createElement('tr');
+          const tdId = document.createElement('td'); tdId.textContent = student.student_id || 'N/A'; tdId.style.padding = '8px'; tdId.style.border = '1px solid #ddd'; tr.appendChild(tdId);
+          const tdName = document.createElement('td'); tdName.textContent = (student.first_name || '') + (student.last_name ? ' ' + student.last_name : ''); tdName.style.padding = '8px'; tdName.style.border = '1px solid #ddd'; tr.appendChild(tdName);
+          const tdParent = document.createElement('td');
+          const parentFull = (student.user_profiles && (student.user_profiles.first_name || student.user_profiles.last_name))
+            ? `${student.user_profiles.first_name || ''} ${student.user_profiles.last_name || ''}`.trim()
+            : (student.parent_name || 'N/A');
+          tdParent.textContent = parentFull;
+          tdParent.style.padding = '8px'; tdParent.style.border = '1px solid #ddd'; tr.appendChild(tdParent);
+          const tdBirth = document.createElement('td'); tdBirth.textContent = student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : 'N/A'; tdBirth.style.padding = '8px'; tdBirth.style.border = '1px solid #ddd'; tr.appendChild(tdBirth);
+          const tdEnroll = document.createElement('td'); tdEnroll.textContent = student.enrollment_date ? new Date(student.enrollment_date).toLocaleDateString() : 'N/A'; tdEnroll.style.padding = '8px'; tdEnroll.style.border = '1px solid #ddd'; tr.appendChild(tdEnroll);
+          const tdSection = document.createElement('td'); tdSection.textContent = student.section?.name || student.section_name || 'Unassigned'; tdSection.style.padding = '8px'; tdSection.style.border = '1px solid #ddd'; tr.appendChild(tdSection);
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        pageDiv.appendChild(table);
+
+        // If last page, add summary and footer
+        if (pageIndex === totalPages - 1) {
+          const summaryClone = summary.cloneNode(true);
+          pageDiv.appendChild(summaryClone);
+          const footerClone = footer.cloneNode(true);
+          pageDiv.appendChild(footerClone);
+        }
+
+        return pageDiv;
+      };
+
+      // Render each page separately
+      for (let pageIndex = 0; pageIndex < totalPages; pageIndex++) {
+        const pageDiv = buildPageDiv(pageIndex);
+        document.body.appendChild(pageDiv);
+
+        // render the pageDiv to canvas
+        // use a modest scale to keep resolution reasonable
+        // allowTaint/useCORS kept for images
+        // eslint-disable-next-line no-await-in-loop
+        const pageCanvas = await html2canvas(pageDiv, { scale: 2, useCORS: true, logging: false, allowTaint: true });
+
+        const canvasWidth = pageCanvas.width;
+        const canvasHeight = pageCanvas.height;
+
+        const imgData = pageCanvas.toDataURL('image/png');
+
+        // Calculate image height in mm for given imgWidth
+        const imgHeightMm = (canvasHeight * imgWidth) / canvasWidth;
+
+        pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeightMm);
+        if (pageIndex < totalPages - 1) pdf.addPage();
+
+        document.body.removeChild(pageDiv);
+      }
+
       pdf.save(`Student_List_${sectionName}_${new Date().toISOString().slice(0,10)}.pdf`);
-      
-      document.body.removeChild(pdfContent);
-      showAlertMessage("success", "PDF Downloaded Successfully");
+      showAlertMessage('success', 'PDF Downloaded Successfully');
     } catch (err) {
       showAlertMessage("danger", "Failed to generate PDF. Please try again.");
     } finally {
@@ -1132,14 +1217,22 @@ const ClassroomPage = () => {
     }
   };
   const exportToCSV = () => {
-    let csvContent = "ID,Student Name,Section\n";
+    let csvContent = "ID,Student Name,Parent Name,Birth Date,Enrollment Date,Section\n";
     printFilteredStudents.forEach((student, index) => {
       const name = (student.first_name && student.last_name)
         ? `${student.first_name} ${student.last_name}`
         : 'No Name';
+      const parentName = (student.user_profiles && (student.user_profiles.first_name || student.user_profiles.last_name))
+        ? `${student.user_profiles.first_name || ''} ${student.user_profiles.last_name || ''}`.trim()
+        : (student.parent_name || 'N/A');
+      const birthDate = student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : '';
+      const enrollDate = student.enrollment_date ? new Date(student.enrollment_date).toLocaleDateString() : '';
       const row = [
         student.student_id || 'N/A',
         name,
+        parentName,
+        birthDate,
+        enrollDate,
         (student.section?.name || student.section_name || 'Unassigned')
       ];
       const escapedRow = row.map(field => {
@@ -1402,13 +1495,16 @@ const ClassroomPage = () => {
                 </Nav.Item>
               </Nav>
               {/* Content Area */}              <div className="p-4 pb-2" style={{ flex: 1, overflow: "visible", display: "flex", flexDirection: "column" }}>
-                {/* Content Header */}<div className="d-flex justify-content-between align-items-center mb-4">
-                  <div>                    <h4 className="mb-1" style={{ color: kidStyles.colors.primary, fontWeight: 'bold' }}>
+                {/* Content Header */}
+                <div className="d-flex justify-content-between align-items-center mb-4">
+                  <div>
+                    <h4 className="mb-1" style={{ color: kidStyles.colors.primary, fontWeight: 'bold' }}>
                       {activeTab === "students" ? (
                         <span className="d-flex align-items-center">
                           <FaGraduationCap className="me-2" size={24} />
                           Students List
-                        </span>                      ) : (activeTab === "teachers" && userRole === "admin") ? (
+                        </span>
+                      ) : (activeTab === "teachers" && userRole === "admin") ? (
                         <span className="d-flex align-items-center">
                           <FaChalkboardTeacher className="me-2" size={24} />
                           Teachers List
@@ -1427,6 +1523,28 @@ const ClassroomPage = () => {
                         ? "Manage teachers and their assigned sections"
                         : "Manage class sections"}
                     </p>
+                    {/* Total counts for lists */}
+                    <div style={{ marginTop: 6 }}>
+                      {activeTab === 'students' && (
+                        <small style={{ color: '#6b7280', fontWeight: 600 }}>
+                          Total Students: {getVisibleStudents().length}
+                        </small>
+                      )}
+                      {activeTab === 'teachers' && (
+                        <small style={{ color: '#6b7280', fontWeight: 600 }}>
+                          Total Teachers: {teachers.filter(t => {
+                            const term = (searchTerm || '').toLowerCase();
+                            if (!term) return true;
+                            return (t.first_name || '').toLowerCase().includes(term) || (t.last_name || '').toLowerCase().includes(term) || ((t.username || '')).toLowerCase().includes(term);
+                          }).length}
+                        </small>
+                      )}
+                      {activeTab === 'sections' && (
+                        <small style={{ color: '#6b7280', fontWeight: 600 }}>
+                          Total Sections: {filteredSections.length}
+                        </small>
+                      )}
+                    </div>
                   </div>
 
                   {/* Actions */}
@@ -1660,6 +1778,9 @@ const ClassroomPage = () => {
                                 />
                               </th>
                             )}
+                            <th style={{ padding: '15px', borderTop: 'none', width: '60px' }}>
+                              <div style={{ fontWeight: 700, color: kidStyles.colors.primary }}>#</div>
+                            </th>
                             <th style={{ padding: '15px', borderTop: 'none', width: '170px' }}>
                               <div className="d-flex align-items-center">
                                 <div className="me-2" style={{ 
@@ -1746,6 +1867,17 @@ const ClassroomPage = () => {
                                     />
                                   </td>
                                 )}
+                                <td style={{ padding: isMobile ? '10px 8px' : '15px', textAlign: 'center', verticalAlign: 'middle', width: '60px' }}>
+                                  <div style={{
+                                    display: 'inline-block',
+                                    padding: isMobile ? '4px 8px' : '6px 10px',
+                                    borderRadius: '999px',
+                                    background: 'rgba(66, 133, 244, 0.08)',
+                                    color: kidStyles.colors.primary,
+                                    fontWeight: 700,
+                                    fontSize: isMobile ? '0.85rem' : '0.95rem'
+                                  }}>{index + 1}</div>
+                                </td>
                                 <td 
                                   style={{ 
                                     padding: isMobile ? '10px 8px' : '15px',
@@ -1827,11 +1959,12 @@ const ClassroomPage = () => {
                       <Table hover className={isMobile ? 'classroom-mobile-table' : ''} style={{ marginBottom: 0 }}>
                         <thead style={{ backgroundColor: 'rgba(66, 133, 244, 0.1)' }}>
                           <tr>
-                            <th style={{ padding: '15px', borderTop: 'none' }}>Name</th>
-                            <th style={{ padding: '15px', borderTop: 'none' }}>Email</th>
-                            <th style={{ padding: '15px', borderTop: 'none' }}>Section</th>
-                            <th style={{ padding: '15px', borderTop: 'none' }}>Actions</th>
-                          </tr>
+                              <th style={{ padding: '15px', borderTop: 'none', width: '60px' }}>#</th>
+                              <th style={{ padding: '15px', borderTop: 'none' }}>Name</th>
+                              <th style={{ padding: '15px', borderTop: 'none' }}>Email</th>
+                              <th style={{ padding: '15px', borderTop: 'none' }}>Section</th>
+                              <th style={{ padding: '15px', borderTop: 'none' }}>Actions</th>
+                            </tr>
                         </thead>
                         <tbody>
                           {teachers
@@ -1840,10 +1973,11 @@ const ClassroomPage = () => {
                               teacher.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                               (teacher.username || "").toLowerCase().includes(searchTerm.toLowerCase())
                             )
-                            .map((teacher) => {
+                            .map((teacher, index) => {
                               const assignedSection = sections.find(s => s.teacher_id === teacher.id);
                               return (
                                 <tr key={teacher.id}>
+                                  <td style={{ padding: '15px', textAlign: 'center', width: '60px' }}>{index + 1}</td>
                                   <td style={{ padding: '15px' }}>{`${teacher.first_name} ${teacher.last_name}`}</td>
                                   <td style={{ padding: '15px' }}>{teacher.username}</td>
                                   <td style={{ padding: '15px' }}>
@@ -1870,6 +2004,7 @@ const ClassroomPage = () => {
                     <Table responsive hover className={isMobile ? 'classroom-mobile-table' : ''}>
                       <thead>
                         <tr>
+                          <th style={{ width: '60px' }}>#</th>
                           <th>Section Name</th>
                           <th>Classroom</th>
                           <th>Time Period</th>
@@ -1879,7 +2014,7 @@ const ClassroomPage = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredSections.map((section) => (
+                        {filteredSections.map((section, idx) => (
                           <tr 
                             key={section.id}
                             onClick={() => handleSectionClick(section)}
@@ -1894,6 +2029,7 @@ const ClassroomPage = () => {
                               e.target.closest('tr').style.backgroundColor = '';
                             }}
                           >
+                            <td style={{ textAlign: 'center', padding: '12px' }}>{idx + 1}</td>
                             <td>
                               <div className="fw-bold">{section.name || 'Unnamed Section'}</div>
                               <small className="text-muted">{section.school_year}</small>
@@ -2438,6 +2574,15 @@ const ClassroomPage = () => {
                   <th style={{ padding: isMobile ? '8px 4px' : '12px' }}>
                     <small>Student Name</small>
                   </th>
+                  <th style={{ padding: isMobile ? '8px 4px' : '12px' }}>
+                    <small>Parent Name</small>
+                  </th>
+                  <th style={{ padding: isMobile ? '8px 4px' : '12px', minWidth: '120px' }}>
+                    <small>Birth Date</small>
+                  </th>
+                  <th style={{ padding: isMobile ? '8px 4px' : '12px', minWidth: '140px' }}>
+                    <small>Enrollment Date</small>
+                  </th>
                   {/* Email and Contact columns removed per request */}
                   <th style={{ padding: isMobile ? '8px 4px' : '12px' }}>
                     <small>Section</small>
@@ -2459,6 +2604,19 @@ const ClassroomPage = () => {
                           : 'No Name'}
                       </small>
                     </td>
+                    <td style={{ padding: isMobile ? '6px 4px' : '12px' }}>
+                      <small>
+                        {(student.user_profiles && (student.user_profiles.first_name || student.user_profiles.last_name))
+                          ? `${student.user_profiles.first_name || ''} ${student.user_profiles.last_name || ''}`.trim()
+                          : (student.parent_name || 'N/A')}
+                      </small>
+                    </td>
+                    <td style={{ padding: isMobile ? '6px 4px' : '12px' }}>
+                      <small>{student.date_of_birth ? new Date(student.date_of_birth).toLocaleDateString() : 'N/A'}</small>
+                    </td>
+                    <td style={{ padding: isMobile ? '6px 4px' : '12px' }}>
+                      <small>{student.enrollment_date ? new Date(student.enrollment_date).toLocaleDateString() : 'N/A'}</small>
+                    </td>
                     {/* Email and Contact columns removed per request */}
                     <td style={{ padding: isMobile ? '6px 4px' : '12px' }}>
                       <small>{(student.section?.name || student.section_name || 'Unassigned')}</small>
@@ -2476,7 +2634,7 @@ const ClassroomPage = () => {
                   }
                 }).length === 0 && (
                   <tr>
-                    <td colSpan={3} className="text-center py-3">
+                    <td colSpan={6} className="text-center py-3">
                       No students found
                     </td>
                   </tr>
