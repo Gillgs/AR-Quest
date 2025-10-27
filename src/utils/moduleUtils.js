@@ -139,6 +139,36 @@ export const moduleUtils = {
 
       // Delete associated quizzes if they exist
       if (existingModule.quizzes && existingModule.quizzes.length > 0) {
+        console.log('ModuleUtils: Deleting quiz attempts for associated quizzes...');
+        
+        // First, get all quiz IDs for this module
+        const { data: quizzes, error: quizFetchError } = await client
+          .from('quizzes')
+          .select('id')
+          .eq('module_id', moduleId);
+        
+        if (quizFetchError) {
+          console.error('ModuleUtils: Error fetching quiz IDs:', quizFetchError);
+          throw new Error(`Failed to fetch quiz IDs: ${quizFetchError.message}`);
+        }
+
+        // Delete quiz attempts that reference these quizzes
+        if (quizzes && quizzes.length > 0) {
+          const quizIds = quizzes.map(q => q.id);
+          console.log('ModuleUtils: Deleting quiz attempts for quiz IDs:', quizIds);
+          
+          const { error: attemptsError } = await client
+            .from('quiz_attempts')
+            .delete()
+            .in('quiz_id', quizIds);
+          
+          if (attemptsError) {
+            console.error('ModuleUtils: Error deleting quiz attempts:', attemptsError);
+            throw new Error(`Failed to delete quiz attempts: ${attemptsError.message}`);
+          }
+        }
+
+        // Now delete the quizzes themselves
         console.log('ModuleUtils: Deleting associated quizzes...');
         const { error: quizzesError } = await client
           .from('quizzes')
