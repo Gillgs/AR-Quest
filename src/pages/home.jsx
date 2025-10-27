@@ -25,13 +25,14 @@ import Star11 from '../assets/Star 11.png';
 import Star14 from '../assets/Star 14.png';
 import Aug4 from '../assets/AugmentED (2) 4.png';
 
-// Set your Google Drive file ID here. To get a direct-download URL use this template:
-// https://drive.google.com/uc?export=download&id=FILE_ID
-// Replace FILE_ID with your file's ID and ensure the file's sharing is set to "Anyone with the link".
-const DRIVE_FILE_ID = "FILE_ID_PLACEHOLDER"; // <-- replace with actual Drive file id
+// Configure Google Drive link for the APK. If you want to trigger a direct download
+// set DRIVE_FILE_ID to the file's ID (example: the id part from
+// https://drive.google.com/file/d/FILE_ID/view). If you prefer to open the
+// Drive view page, use DRIVE_VIEW_URL.
+const DRIVE_FILE_ID = "1T7q9A9ZTWYj4OAZ9hLasCXQRfzM16h3N"; // file id from your Drive view link
 const DRIVE_DIRECT_URL = `https://drive.google.com/uc?export=download&id=${DRIVE_FILE_ID}`;
-// If you don't have a direct file ID yet, use the folder link (will open the Drive folder/page)
-const DRIVE_FOLDER_URL = "https://drive.google.com/drive/folders/1xvRSagGE5STtgjHSXigm7XUps7xHfXnW?usp=sharing";
+// Fallback/view URL (opens Drive file view)
+const DRIVE_VIEW_URL = "https://drive.google.com/file/d/1T7q9A9ZTWYj4OAZ9hLasCXQRfzM16h3N/view?usp=sharing";
 
 const AugmentED = () => {
   return (
