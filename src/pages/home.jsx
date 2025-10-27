@@ -32,7 +32,7 @@ import Aug4 from '../assets/AugmentED (2) 4.png';
 const DRIVE_FILE_ID = "1T7q9A9ZTWYj4OAZ9hLasCXQRfzM16h3N"; // file id from your Drive view link
 const DRIVE_DIRECT_URL = `https://drive.google.com/uc?export=download&id=${DRIVE_FILE_ID}`;
 // Fallback/view URL (opens Drive file view)
-const DRIVE_VIEW_URL = "https://drive.google.com/file/d/1T7q9A9ZTWYj4OAZ9hLasCXQRfzM16h3N/view?usp=sharing";
+const DRIVE_VIEW_URL = "https://drive.google.com/file/d/1Rm5V9xAihB2KWGeRd48cDNqNk5Spgg32/view?usp=sharing";
 
 const AugmentED = () => {
   return (
