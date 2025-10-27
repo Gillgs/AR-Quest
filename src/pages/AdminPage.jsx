@@ -2417,11 +2417,17 @@ const handleFormSubmit = async (formData) => {
                 .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
                 .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
                 .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
+                .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-delete:hover { background: rgba(220,53,69,0.08); border-color: rgba(220,53,69,0.12); }
               `}</style>
               <div>{selectedIds.size} selected</div>
               <div className="d-flex gap-2">
                 <Button size="sm" className="btn-csv" onClick={() => handleExportSelected([...selectedIds])}>Export CSV</Button>
                 <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF([...selectedIds])}>Export PDF</Button>
+                <Button size="sm" className="btn-delete" onClick={() => handleShowModal('bulk-delete', [...selectedIds])}>
+                  <FiTrash2 size={14} className="me-1" />
+                  Delete Selected
+                </Button>
                 <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
               </div>
             </div>
@@ -2495,10 +2501,53 @@ const handleFormSubmit = async (formData) => {
       {/* Children Section */}
       {activeTab === 'children' && (
         <>
+          {/* Bulk toolbar */}
+          {selectedIds.size > 0 && (
+            <div className="bulk-toolbar d-flex justify-content-between align-items-center mb-2" style={{ marginBottom: '0.25rem', transform: 'translateY(6px)' }}>
+              <style>{`
+                .bulk-toolbar .btn-csv { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-csv:hover { background: rgba(40,199,111,0.08); border-color: rgba(40,199,111,0.12); }
+                .bulk-toolbar .btn-pdf { color: ${colors.primary}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
+                .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
+                .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-delete:hover { background: rgba(220,53,69,0.08); border-color: rgba(220,53,69,0.12); }
+              `}</style>
+              <div>{selectedIds.size} selected</div>
+              <div className="d-flex gap-2">
+                <Button size="sm" className="btn-csv" onClick={() => handleExportSelected([...selectedIds])}>Export CSV</Button>
+                <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF([...selectedIds])}>Export PDF</Button>
+                <Button size="sm" className="btn-delete" onClick={() => handleShowModal('bulk-delete', [...selectedIds])}>
+                  <FiTrash2 size={14} className="me-1" />
+                  Delete Selected
+                </Button>
+                <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
+              </div>
+            </div>
+          )}
           <Table bordered hover responsive className="mt-3 pretty-table" style={{ borderRadius: '16px', boxShadow: '0 4px 16px rgba(255,193,7,0.08)' }}>
             <thead style={{ background: 'linear-gradient(90deg, #fffdf2 80%, #fffbf0 100%)', borderRadius: '16px' }}>
               <tr>
-                <th style={{ backgroundColor: '#fffdf2', borderTopLeftRadius: '16px' }}>Student ID</th>
+                <th style={{ backgroundColor: '#fffdf2', borderTopLeftRadius: '16px', width: 48 }}>
+                  <input
+                    type="checkbox"
+                    checked={users.length > 0 && users.every(u => selectedIds.has(u.id))}
+                    onChange={(e) => {
+                      const newSet = new Set(selectedIds);
+                      if (e.target.checked) {
+                        users.forEach(u => newSet.add(u.id));
+                        setSelectAllOnPage(true);
+                      } else {
+                        users.forEach(u => newSet.delete(u.id));
+                        setSelectAllOnPage(false);
+                      }
+                      setSelectedIds(newSet);
+                    }}
+                    aria-label="Select all on page"
+                  />
+                </th>
+                <th style={{ backgroundColor: '#fffdf2' }}>Student ID</th>
                 <th style={{ backgroundColor: '#fffdf2' }}>Name</th>
                 <th style={{ backgroundColor: '#fffdf2' }}>Parent</th>
                 <th style={{ backgroundColor: '#fffdf2' }}>Section</th>
@@ -2511,6 +2560,19 @@ const handleFormSubmit = async (formData) => {
             <tbody>
               {users.map((student, idx) => (
                 <tr key={student.id} style={{ background: '#fffdf2', borderRadius: '12px', transition: 'box-shadow 0.2s', boxShadow: '0 2px 8px rgba(255,193,7,0.08)' }}>
+                  <td style={{ width: 48 }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(student.id)}
+                      onChange={(e) => {
+                        const newSet = new Set(selectedIds);
+                        if (e.target.checked) newSet.add(student.id);
+                        else newSet.delete(student.id);
+                        setSelectedIds(newSet);
+                      }}
+                      aria-label={`Select ${student.first_name} ${student.last_name}`}
+                    />
+                  </td>
                   <td>{student.student_id || `STU-${idx + 1}`}</td>
                   <td>{`${student.first_name || ''}${student.middle_name || student.middlename ? ' ' + (student.middle_name || student.middlename) : ''} ${student.last_name || ''}`.trim()}</td>
                   <td>{`${student.parent_first_name || ''}${student.parent_middle_name ? ' ' + student.parent_middle_name : ''} ${student.parent_last_name || ''}`.trim() || 'Not assigned'}</td>
@@ -2562,11 +2624,17 @@ const handleFormSubmit = async (formData) => {
                 .bulk-toolbar .btn-pdf:hover { background: rgba(0,102,254,0.06); border-color: rgba(0,102,254,0.10); }
                 .bulk-toolbar .btn-clear { color: ${colors.success}; border: 1px solid transparent; background: transparent; }
                 .bulk-toolbar .btn-clear:hover { background: rgba(40,199,111,0.06); border-color: rgba(40,199,111,0.10); }
+                .bulk-toolbar .btn-delete { color: ${colors.danger}; border: 1px solid transparent; background: transparent; }
+                .bulk-toolbar .btn-delete:hover { background: rgba(220,53,69,0.08); border-color: rgba(220,53,69,0.12); }
               `}</style>
               <div>{selectedIds.size} selected</div>
               <div className="d-flex gap-2">
                 <Button size="sm" className="btn-csv" onClick={() => handleExportSelected([...selectedIds])}>Export CSV</Button>
                 <Button size="sm" className="btn-pdf" onClick={() => handleExportPDF([...selectedIds])}>Export PDF</Button>
+                <Button size="sm" className="btn-delete" onClick={() => handleShowModal('bulk-delete', [...selectedIds])}>
+                  <FiTrash2 size={14} className="me-1" />
+                  Delete Selected
+                </Button>
                 <Button size="sm" className="btn-clear" onClick={() => { setSelectedIds(new Set()); setSelectAllOnPage(false); }}>Clear</Button>
               </div>
             </div>
