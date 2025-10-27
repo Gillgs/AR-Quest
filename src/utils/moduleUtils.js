@@ -151,6 +151,23 @@ export const moduleUtils = {
         }
       }
 
+      // Delete student progress records referencing this module (avoid FK constraint when deleting module)
+      try {
+        console.log('ModuleUtils: Deleting student progress entries for module...');
+        const { error: progressError } = await client
+          .from('student_progress')
+          .delete()
+          .eq('module_id', moduleId);
+
+        if (progressError) {
+          console.error('ModuleUtils: Error deleting student_progress:', progressError);
+          throw new Error(`Failed to delete student progress: ${progressError.message}`);
+        }
+      } catch (e) {
+        console.error('ModuleUtils: Unexpected error deleting student progress:', e);
+        throw e;
+      }
+
       // Finally delete the module itself
       console.log('ModuleUtils: Attempting to delete module:', moduleId);
       const { error: moduleError } = await client
