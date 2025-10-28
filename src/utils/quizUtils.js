@@ -249,7 +249,7 @@ export const quizUtils = {
         title: `${moduleName} - Basic Knowledge Check`,
         description: `Test your understanding of basic ${moduleName} concepts`,
         total_questions: 3,
-        time_limit_minutes: 10,
+        time_limit_minutes: 0,
         passing_score: 70,
         max_attempts: 3,
         questions_data: {
@@ -295,7 +295,7 @@ export const quizUtils = {
         title: `${moduleName} - Advanced Assessment`,
         description: `Challenge yourself with advanced ${moduleName} questions`,
         total_questions: 2,
-        time_limit_minutes: 15,
+        time_limit_minutes: 0,
         passing_score: 80,
         max_attempts: 2,
         questions_data: {
