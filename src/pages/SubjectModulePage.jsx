@@ -244,8 +244,8 @@ const CreateQuizModal = ({
                 <input type='number' value={newQuizQuestionCount} onChange={e => { const val = e.target.value; if (val === '') setNewQuizQuestionCount(''); else setNewQuizQuestionCount(Math.max(1, Math.min(50, parseInt(val)))); }} min='1' max='50' style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }} />
               </div>
               <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>Time Limit (minutes)</label>
-                <input type='number' value={newQuizTimeLimit} onChange={e => { const val = e.target.value; if (val === '') setNewQuizTimeLimit(''); else setNewQuizTimeLimit(Math.max(1, parseInt(val))); }} min='1' max='300' style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }} />
+                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>Time Limit (minutes) <span style={{ color: '#6b7280', fontWeight: 400 }}>(optional)</span></label>
+                <input type='number' value={newQuizTimeLimit} onChange={e => { const val = e.target.value; if (val === '') setNewQuizTimeLimit(''); else setNewQuizTimeLimit(Math.max(0, parseInt(val))); }} min='0' max='300' style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }} />
               </div>
               <div style={{ marginBottom: '12px' }}>
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>Passing Score (%)</label>
@@ -422,8 +422,6 @@ const CreateLessonModal = ({
   setNewLessonDescription,
   newLessonContent,
   setNewLessonContent,
-  newLessonDuration,
-  setNewLessonDuration,
   handleSubmitLesson,
   resetLessonForm,
   moduleColor = '#6366f1'
@@ -648,42 +646,6 @@ const CreateLessonModal = ({
               color: '#333333'
             }}
             required
-          />
-        </div>
-
-        {/* Duration Input */}
-        <div style={{ marginBottom: '24px' }}>
-          <label style={{ 
-            display: 'block', 
-            marginBottom: '4px', 
-            fontSize: '0.9rem', 
-            fontWeight: 600, 
-            color: '#1e293b' 
-          }}>
-            Duration (minutes)
-          </label>
-          <input
-            type="number"
-            value={newLessonDuration}
-            onChange={e => {
-              const val = e.target.value;
-              if (val === '') setNewLessonDuration('');
-              else setNewLessonDuration(Math.max(1, parseInt(val)));
-            }}
-            min="1"
-            max="300"
-            style={{ 
-              width: '100%',
-              padding: '12px 16px', 
-              borderRadius: '8px', 
-              border: '1px solid #d1d5db', 
-              fontSize: '14px', 
-              outline: 'none', 
-              boxSizing: 'border-box',
-              fontFamily: 'inherit',
-              background: '#ffffff',
-              color: '#333333'
-            }}
           />
         </div>
 
@@ -1117,7 +1079,6 @@ const SubjectModulePage = () => {
   const [newLessonTitle, setNewLessonTitle] = useState('');
   const [newLessonDescription, setNewLessonDescription] = useState('');
   const [newLessonContent, setNewLessonContent] = useState('');
-  const [newLessonDuration, setNewLessonDuration] = useState(30);
   // UI state for created module name (used in toast)
   const [moduleCreatedName, setModuleCreatedName] = useState('');
   const [moduleToastType, setModuleToastType] = useState('created'); // 'created' | 'updated' | 'deleted'
@@ -1127,7 +1088,7 @@ const SubjectModulePage = () => {
   const [newQuizTitle, setNewQuizTitle] = useState('');
   const [newQuizDescription, setNewQuizDescription] = useState('');
   const [newQuizQuestionCount, setNewQuizQuestionCount] = useState(5);
-  const [newQuizTimeLimit, setNewQuizTimeLimit] = useState(15);
+  const [newQuizTimeLimit, setNewQuizTimeLimit] = useState(0);
   const [newQuizPassingScore, setNewQuizPassingScore] = useState(70);
   
   // Quiz questions state
@@ -1894,7 +1855,6 @@ const SubjectModulePage = () => {
     setNewLessonTitle('');
     setNewLessonDescription('');
     setNewLessonContent('');
-    setNewLessonDuration(30);
     setCurrentModuleId(null);
   };
 
@@ -1902,7 +1862,7 @@ const SubjectModulePage = () => {
     setNewQuizTitle('');
     setNewQuizDescription('');
     setNewQuizQuestionCount(5);
-    setNewQuizTimeLimit(15);
+    setNewQuizTimeLimit(0);
     setNewQuizPassingScore(70);
     setCurrentModuleId(null);
     setQuizQuestions([
@@ -2235,12 +2195,6 @@ const SubjectModulePage = () => {
       return;
     }
 
-    // Validate duration
-    if (newLessonDuration !== '' && (isNaN(Number(newLessonDuration)) || Number(newLessonDuration) < 1 || Number(newLessonDuration) > 300)) {
-      alert('Please provide a valid lesson duration between 1 and 300 minutes or leave blank');
-      return;
-    }
-
     try {
       // Ensure module id is a readable slug. If currentModuleId looks like a UUID/hash,
       // create a slug module first (copying fields) and update references.
@@ -2310,9 +2264,7 @@ const SubjectModulePage = () => {
         title: newLessonTitle.trim(),
         description: newLessonDescription.trim(),
         content: newLessonContent.trim(),
-        lessonData: {
-          duration: newLessonDuration === '' ? null : Number(newLessonDuration)
-        },
+        lessonData: {},
         sortOrder: 0
       };
 
@@ -2350,7 +2302,7 @@ const SubjectModulePage = () => {
         content: `Welcome to ${newLessonTitle}. This lesson will cover the key concepts and provide hands-on practice.`,
         module_id: currentModuleId,
         quiz_id: null,
-        lesson_data: { duration: newLessonDuration },
+        lesson_data: {},
         sort_order: 0,
         is_active: true,
         created_at: new Date().toISOString(),
@@ -3239,15 +3191,13 @@ const SubjectModulePage = () => {
     }, [editingLesson]);
     const [editTitle, setEditTitle] = useState('');
     const [editDescription, setEditDescription] = useState('');
-    const [editDuration, setEditDuration] = useState(30);
     const [editContent, setEditContent] = useState('');
 
     useEffect(() => {
       if (editingLesson) {
         setEditTitle(editingLesson.title || '');
         setEditDescription(editingLesson.description || '');
-  setEditDuration(editingLesson.lesson_data?.duration || 30);
-  setEditContent(editingLesson.content || '');
+        setEditContent(editingLesson.content || '');
       }
     }, [editingLesson]);
 
@@ -3260,8 +3210,7 @@ const SubjectModulePage = () => {
         // Reset form
         setEditTitle('');
         setEditDescription('');
-  setEditDuration(30);
-  setEditContent('');
+        setEditContent('');
       }, 200);
     };
 
@@ -3278,8 +3227,7 @@ const SubjectModulePage = () => {
           description: editDescription.trim(),
           content: editContent.trim(),
           lesson_data: {
-            ...editingLesson.lesson_data,
-            duration: editDuration
+            ...editingLesson.lesson_data
           }
         };
 
@@ -3407,37 +3355,7 @@ const SubjectModulePage = () => {
               />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: spacing.lg, marginBottom: spacing.lg }}>
-              <div>
-                <label style={{ display: 'block', fontWeight: 600, marginBottom: spacing.sm, color: colors.textColor }}>
-                  Duration (minutes)
-                </label>
-                <input
-                  type="number"
-                  value={editDuration}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === '') setEditDuration('');
-                    else setEditDuration(parseInt(val));
-                  }}
-                  style={{
-                    width: '100%',
-                    padding: '12px 16px',
-                    borderRadius: '8px',
-                    border: `1px solid ${colors.borderColor}`,
-                    fontSize: '14px',
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                    fontFamily: 'inherit',
-                    background: '#ffffff',
-                    color: '#333333'
-                  }}
-                  min="1"
-                  max="180"
-                />
-              </div>
-              {/* difficulty removed from lesson editing per request */}
-            </div>
+
 
             <div style={{ display: 'flex', gap: spacing.md, justifyContent: 'flex-end' }}>
               <button type="button" onClick={handleClose} style={{ 
@@ -3489,7 +3407,7 @@ const SubjectModulePage = () => {
     const [editTitle, setEditTitle] = useState('');
     const [editDescription, setEditDescription] = useState('');
     const [editPassingScore, setEditPassingScore] = useState(70);
-    const [editTimeLimit, setEditTimeLimit] = useState(15);
+    const [editTimeLimit, setEditTimeLimit] = useState(0);
     const [editQuizQuestions, setEditQuizQuestions] = useState([
       {
         id: 1,
@@ -3504,7 +3422,7 @@ const SubjectModulePage = () => {
         setEditTitle(editingQuiz.title || '');
         setEditDescription(editingQuiz.description || '');
         setEditPassingScore(editingQuiz.passing_score || 70);
-        setEditTimeLimit(editingQuiz.time_limit_minutes || 15);
+        setEditTimeLimit(editingQuiz.time_limit_minutes || 0);
         
         // Load existing questions
         if (editingQuiz.questions_data?.questions && editingQuiz.questions_data.questions.length > 0) {
@@ -3762,7 +3680,7 @@ const SubjectModulePage = () => {
         setEditTitle('');
         setEditDescription('');
         setEditPassingScore(70);
-        setEditTimeLimit(15);
+        setEditTimeLimit(0);
         setEditQuizQuestions([
           {
             id: 1,
@@ -3951,7 +3869,7 @@ const SubjectModulePage = () => {
               </div>
               <div>
                 <label style={{ display: 'block', fontWeight: 600, marginBottom: spacing.sm, color: colors.textColor }}>
-                  Time Limit (minutes)
+                  Time Limit (minutes) <span style={{ color: colors.mutedText, fontWeight: 400 }}>(optional)</span>
                 </label>
                 <input
                   type="number"
@@ -4384,12 +4302,6 @@ const SubjectModulePage = () => {
             border: `1px solid ${hexToRgba(lessonColor, 0.22)}`
           }}>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: spacing.lg, marginBottom: spacing.md }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
-                <Clock size={16} color={colors.primary} />
-                <span style={{ fontSize: '0.95rem', color: colors.textColor, fontWeight: 500 }}>
-                  {selectedLesson.lesson_data?.duration || 30} minutes
-                </span>
-              </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
                 {/* difficulty removed per user request */}
               </div>
@@ -5148,12 +5060,6 @@ const SubjectModulePage = () => {
                         {lesson.description}
                       </p>
                       <div style={{ display: 'flex', alignItems: 'center', gap: spacing.md, marginTop: 8 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
-                          <Clock size={14} color={colors.mutedText} />
-                          <span style={{ fontSize: '0.85rem', color: colors.mutedText }}>
-                            {lesson.lesson_data?.duration || 30} min
-                          </span>
-                        </div>
                         {lesson.quiz_id && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
                             <FileText size={14} color={colors.mutedText} />
@@ -5848,8 +5754,6 @@ const SubjectModulePage = () => {
     setNewLessonDescription={setNewLessonDescription}
     newLessonContent={newLessonContent}
     setNewLessonContent={setNewLessonContent}
-    newLessonDuration={newLessonDuration}
-    setNewLessonDuration={setNewLessonDuration}
     handleSubmitLesson={handleSubmitLesson}
     resetLessonForm={resetLessonForm}
     moduleColor={subjectColor}
