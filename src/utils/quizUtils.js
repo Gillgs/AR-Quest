@@ -17,7 +17,6 @@ export const quizUtils = {
           title,
           description,
           total_questions,
-          time_limit_minutes,
           passing_score,
           max_attempts,
           questions_data,
@@ -55,7 +54,6 @@ export const quizUtils = {
           title,
           description,
           total_questions,
-          time_limit_minutes,
           passing_score,
           max_attempts,
           questions_data,
@@ -124,7 +122,7 @@ export const quizUtils = {
         title: quizData.title,
         description: quizData.description || '',
         total_questions: quizData.questions.length,
-        time_limit_minutes: quizData.timeLimitMinutes || null,
+  // time_limit_minutes removed
         passing_score: quizData.passingScore || 70,
         max_attempts: quizData.maxAttempts || 3,
         questions_data: questionsData,
@@ -248,9 +246,8 @@ export const quizUtils = {
         module_id: moduleId,
         title: `${moduleName} - Basic Knowledge Check`,
         description: `Test your understanding of basic ${moduleName} concepts`,
-        total_questions: 3,
-        time_limit_minutes: 0,
-        passing_score: 70,
+  total_questions: 3,
+  passing_score: 70,
         max_attempts: 3,
         questions_data: {
           questions: [
@@ -294,9 +291,8 @@ export const quizUtils = {
         module_id: moduleId,
         title: `${moduleName} - Advanced Assessment`,
         description: `Challenge yourself with advanced ${moduleName} questions`,
-        total_questions: 2,
-        time_limit_minutes: 0,
-        passing_score: 80,
+  total_questions: 2,
+  passing_score: 80,
         max_attempts: 2,
         questions_data: {
           questions: [
@@ -385,9 +381,7 @@ export const quizUtils = {
       });
     }
 
-    if (quizData.timeLimitMinutes && (quizData.timeLimitMinutes < 1 || quizData.timeLimitMinutes > 300)) {
-      errors.push('Time limit must be between 1 and 300 minutes');
-    }
+    // time limit validation removed (feature removed)
 
     if (quizData.passingScore && (quizData.passingScore < 0 || quizData.passingScore > 100)) {
       errors.push('Passing score must be between 0 and 100');
