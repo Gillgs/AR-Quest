@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../config/supabase';
 import { progressUtils } from '../utils/progressUtils';
-import { ChevronRight, Clock, Award, CheckCircle, XCircle, Play, Users } from 'lucide-react';
+import { ChevronRight, Award, CheckCircle, XCircle, Play, Users } from 'lucide-react';
 
 const ProgressDetails = ({ 
   moduleId, 
@@ -415,18 +415,6 @@ const ProgressDetails = ({
                     }}>
                       {lesson.title}
                     </div>
-                    {lesson.duration_minutes && (
-                      <div style={{ 
-                        fontSize: '0.75rem', 
-                        color: colors.mutedText,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px'
-                      }}>
-                        <Clock size={12} />
-                        {lesson.duration_minutes} min
-                      </div>
-                    )}
                   </div>
                 </div>
                 
