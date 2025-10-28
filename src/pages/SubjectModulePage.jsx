@@ -41,8 +41,6 @@ const CreateQuizModal = ({
   setNewQuizDescription,
   newQuizQuestionCount,
   setNewQuizQuestionCount,
-  newQuizTimeLimit,
-  setNewQuizTimeLimit,
   newQuizPassingScore,
   setNewQuizPassingScore,
   quizQuestions,
@@ -243,10 +241,7 @@ const CreateQuizModal = ({
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>Number of Questions</label>
                 <input type='number' value={newQuizQuestionCount} onChange={e => { const val = e.target.value; if (val === '') setNewQuizQuestionCount(''); else setNewQuizQuestionCount(Math.max(1, Math.min(50, parseInt(val)))); }} min='1' max='50' style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }} />
               </div>
-              <div style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>Time Limit (minutes) <span style={{ color: '#6b7280', fontWeight: 400 }}>(optional)</span></label>
-                <input type='number' value={newQuizTimeLimit} onChange={e => { const val = e.target.value; if (val === '') setNewQuizTimeLimit(''); else setNewQuizTimeLimit(Math.max(0, parseInt(val))); }} min='0' max='300' style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }} />
-              </div>
+              {/* Time limit removed per request */}
               <div style={{ marginBottom: '12px' }}>
                 <label style={{ display: 'block', fontSize: '13px', fontWeight: 500, color: '#374151', marginBottom: '6px' }}>Passing Score (%)</label>
                 <input type='number' value={newQuizPassingScore} onChange={e => { const val = e.target.value; if (val === '') setNewQuizPassingScore(''); else setNewQuizPassingScore(Math.max(1, Math.min(100, parseInt(val)))); }} min='1' max='100' style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '13px' }} />
@@ -1088,7 +1083,6 @@ const SubjectModulePage = () => {
   const [newQuizTitle, setNewQuizTitle] = useState('');
   const [newQuizDescription, setNewQuizDescription] = useState('');
   const [newQuizQuestionCount, setNewQuizQuestionCount] = useState(5);
-  const [newQuizTimeLimit, setNewQuizTimeLimit] = useState(0);
   const [newQuizPassingScore, setNewQuizPassingScore] = useState(70);
   
   // Quiz questions state
@@ -1861,9 +1855,8 @@ const SubjectModulePage = () => {
   const resetQuizForm = () => {
     setNewQuizTitle('');
     setNewQuizDescription('');
-    setNewQuizQuestionCount(5);
-    setNewQuizTimeLimit(0);
-    setNewQuizPassingScore(70);
+  setNewQuizQuestionCount(5);
+  setNewQuizPassingScore(70);
     setCurrentModuleId(null);
     setQuizQuestions([
       {
@@ -2385,8 +2378,6 @@ const SubjectModulePage = () => {
         title: newQuizTitle.trim(),
         description: newQuizDescription.trim(),
         questions: formattedQuestions,
-        // Coerce empty / '' values to null so DB defaults can be used
-        timeLimitMinutes: newQuizTimeLimit === '' ? null : Number(newQuizTimeLimit),
         passingScore: newQuizPassingScore === '' ? null : Number(newQuizPassingScore),
         shuffleQuestions: false,
         shuffleOptions: true,
@@ -2451,7 +2442,6 @@ const SubjectModulePage = () => {
         description: newQuizDescription.trim(),
         // Use the validated question count (formattedQuestions length) for local fallback
         total_questions: formattedQuestions.length,
-        time_limit_minutes: newQuizTimeLimit === '' ? null : Number(newQuizTimeLimit),
         passing_score: newQuizPassingScore === '' ? null : Number(newQuizPassingScore),
         questions_data: {
           questions: sampleQuestions,
@@ -2672,9 +2662,9 @@ const SubjectModulePage = () => {
     const [isClosing, setIsClosing] = useState(false);
     const [editName, setEditName] = useState('');
     const [editDescription, setEditDescription] = useState('');
-    const [editDifficulty, setEditDifficulty] = useState(1);
-    const [editDuration, setEditDuration] = useState(60);
-    const [editObjectives, setEditObjectives] = useState(['']);
+  const [editDifficulty, setEditDifficulty] = useState(1);
+  const [editDuration, setEditDuration] = useState(60);
+  const [editObjectives, setEditObjectives] = useState(['']);
 
     useEffect(() => {
       if (editingModule) {
@@ -3407,7 +3397,7 @@ const SubjectModulePage = () => {
     const [editTitle, setEditTitle] = useState('');
     const [editDescription, setEditDescription] = useState('');
     const [editPassingScore, setEditPassingScore] = useState(70);
-    const [editTimeLimit, setEditTimeLimit] = useState(0);
+  /* editTimeLimit removed - quiz time limit feature removed */
     const [editQuizQuestions, setEditQuizQuestions] = useState([
       {
         id: 1,
@@ -3422,7 +3412,7 @@ const SubjectModulePage = () => {
         setEditTitle(editingQuiz.title || '');
         setEditDescription(editingQuiz.description || '');
         setEditPassingScore(editingQuiz.passing_score || 70);
-        setEditTimeLimit(editingQuiz.time_limit_minutes || 0);
+  // time limit removed for quizzes
         
         // Load existing questions
         if (editingQuiz.questions_data?.questions && editingQuiz.questions_data.questions.length > 0) {
@@ -3680,7 +3670,7 @@ const SubjectModulePage = () => {
         setEditTitle('');
         setEditDescription('');
         setEditPassingScore(70);
-        setEditTimeLimit(0);
+  // time limit removed for quizzes
         setEditQuizQuestions([
           {
             id: 1,
@@ -3728,7 +3718,7 @@ const SubjectModulePage = () => {
           title: editTitle.trim(),
           description: editDescription.trim(),
           passing_score: editPassingScore === '' ? null : Math.max(0, Math.min(100, Number(editPassingScore))),
-          time_limit_minutes: editTimeLimit === '' ? null : (Number(editTimeLimit) <= 0 ? null : Number(editTimeLimit)),
+          // time_limit_minutes removed
           questions_data: {
             questions: formattedQuestions,
             total_questions: validQuestions.length
@@ -3867,25 +3857,7 @@ const SubjectModulePage = () => {
                   }}
                 />
               </div>
-              <div>
-                <label style={{ display: 'block', fontWeight: 600, marginBottom: spacing.sm, color: colors.textColor }}>
-                  Time Limit (minutes) <span style={{ color: colors.mutedText, fontWeight: 400 }}>(optional)</span>
-                </label>
-                <input
-                  type="number"
-                  value={editTimeLimit}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === '') setEditTimeLimit('');
-                    else setEditTimeLimit(Math.max(0, parseInt(val)));
-                  }}
-                  style={{
-                    width: '100%', padding: spacing.md, borderRadius: borderRadius.lg,
-                    border: `2px solid ${colors.borderColor}`, background: colors.cardBg,
-                    color: colors.textColor, fontSize: '1rem', position: 'relative', zIndex: 1
-                  }}
-                />
-              </div>
+              {/* Time limit removed from edit quiz form */}
             </div>
 
             {/* Quiz Questions Section */}
@@ -4515,12 +4487,7 @@ const SubjectModulePage = () => {
                   {questionsCount} questions
                 </span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
-                <Clock size={16} color={colors.info} />
-                <span style={{ fontSize: '0.95rem', color: colors.textColor, fontWeight: 500 }}>
-                  {selectedQuizDetail.time_limit_minutes || 'No'} time limit
-                </span>
-              </div>
+              {/* quiz time limit removed from details */}
               <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
                 <TrendingUp size={16} color={colors.success} />
                 <span style={{ fontSize: '0.95rem', color: colors.textColor, fontWeight: 500 }}>
@@ -5215,14 +5182,7 @@ const SubjectModulePage = () => {
                             {quiz.total_questions} questions
                           </span>
                         </div>
-                        {quiz.time_limit_minutes && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
-                            <Clock size={14} color={colors.mutedText} />
-                            <span style={{ fontSize: isMobile ? '0.75rem' : '0.85rem', color: colors.mutedText }}>
-                              {quiz.time_limit_minutes} min
-                            </span>
-                          </div>
-                        )}
+                        {/* quiz time limit removed from list view */}
                         <div style={{ display: 'flex', alignItems: 'center', gap: spacing.xs }}>
                           <Award size={14} color={colors.mutedText} />
                           <span style={{ fontSize: isMobile ? '0.75rem' : '0.85rem', color: colors.mutedText }}>
@@ -5767,11 +5727,9 @@ const SubjectModulePage = () => {
     setNewQuizTitle={setNewQuizTitle}
     newQuizDescription={newQuizDescription}
     setNewQuizDescription={setNewQuizDescription}
-    newQuizQuestionCount={newQuizQuestionCount}
-    setNewQuizQuestionCount={setNewQuizQuestionCount}
-    newQuizTimeLimit={newQuizTimeLimit}
-    setNewQuizTimeLimit={setNewQuizTimeLimit}
-    newQuizPassingScore={newQuizPassingScore}
+  newQuizQuestionCount={newQuizQuestionCount}
+  setNewQuizQuestionCount={setNewQuizQuestionCount}
+  newQuizPassingScore={newQuizPassingScore}
     setNewQuizPassingScore={setNewQuizPassingScore}
     moduleColor={subjectColor}
     quizQuestions={quizQuestions}
